@@ -1,4 +1,5 @@
 import json
+from review_enum import review_enum
 class sparse_data:
     __row2user_dict = {}
     __user2row_dict = {}
@@ -15,9 +16,6 @@ class sparse_data:
             record = json.loads(line)
             userId = record['reviewerID']
             itemId = record['asin']
-            rating = float(record['overall'])
-            helpful, unhelpful = record['helpful']
-            review_text = record['reviewText']
             if userId not in self.__user2row_dict:
                 self.__user2row_dict[userId] = row_count
                 self.__row2user_dict[row_count] = userId
@@ -26,7 +24,7 @@ class sparse_data:
                 self.__item2col_dict[itemId] = col_count
                 self.__col2item_dict[col_count] = itemId
                 col_count += 1
-            self.__data[(self.__user2row_dict[userId], self.__item2col_dict[itemId])] = [rating, [helpful, unhelpful], review_text]
+            self.__data[(self.__user2row_dict[userId], self.__item2col_dict[itemId])] = [float(record['overall']), record['helpful'], record['reviewText']]
 
     def get_row_size(self):
         return len(self.__row2user_dict)
@@ -34,15 +32,18 @@ class sparse_data:
     def get_col_size(self):
         return len(self.__col2item_dict)
 
+    def get_entry_size(self):
+        return len(self.__data)
+
     # -1 means no such record
-    def get_rating(self, row_id, col_id):
-        if (row_id, col_id) in self.__data:
-            return self.__data[(row_id, col_id)][0]
+    def get_val(self, row_id, col_id, attr):
+        if (row_id, col_id) in self.__data and attr in review_enum:
+            return self.__data[(row_id, col_id)][review_enum[attr]]
         return -1
 
-    def set_rating(self, row_id, col_id, rating):
-        if (row_id, col_id) in self.__data:
-            self.__data[(row_id, col_id)][0] = rating
+    def set_val(self, row_id, col_id, value, attr):
+        if (row_id, col_id) in self.__data and attr in review_enum:
+            self.__data[(row_id, col_id)][review_enum[attr]] = value
             return 0
         return -1
 
