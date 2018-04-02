@@ -67,7 +67,6 @@ reader = Reader(rating_scale=(1, 5))
 
 data = Dataset.load_from_df(df[['userID', 'itemID', 'rating']], reader)
 
-
 kf = KFold(n_splits=3)
 
 bsl_options = {'method': 'als',
@@ -75,22 +74,18 @@ bsl_options = {'method': 'als',
                }
 sim_options = {'name': 'pearson_baseline'}
 
-algo = KNNBasic(bsl_options=bsl_options, sim_options=sim_options)
+knn = KNNBasic(bsl_options=bsl_options, sim_options=sim_options)
+
 i = 0
 for trainset, testset in kf.split(data):
 
     # train and test algorithm.
-    algo.fit(trainset)
-    predictions = algo.test(testset)
+    knn.fit(trainset)
+    predictions = knn.test(testset)
 
     # Compute and print Root Mean Squared Error
     accuracy.rmse(predictions, verbose=True)
     top_n = get_top_n(predictions, n=10)
     # Print the recommended items for each user
-    for uid, user_ratings in top_n.items():
-        print(uid, [iid for (iid, _) in user_ratings])
-    
-
-
-
-
+    #for uid, user_ratings in top_n.items():
+        #print(uid, [iid for (iid, _) in user_ratings])
