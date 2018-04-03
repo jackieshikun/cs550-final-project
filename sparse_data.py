@@ -7,6 +7,8 @@ class sparse_data:
     __item2col_dict = {}
     #(row,col), [rate, [helpful, unhelpful], review_text]
     __data = {}
+    __row_ind = []
+    __col_ind = []
     def __init__(self, filename):
         with open(filename, "r") as f:
             lines = f.readlines()
@@ -24,7 +26,11 @@ class sparse_data:
                 self.__item2col_dict[itemId] = col_count
                 self.__col2item_dict[col_count] = itemId
                 col_count += 1
-            self.__data[(self.__user2row_dict[userId], self.__item2col_dict[itemId])] = [float(record['overall']), record['helpful'], record['reviewText']]
+            row_idx_tmp = self.__user2row_dict[userId]
+            col_idx_tmp = self.__item2col_dict[itemId]
+            self.__data[(row_idx_tmp, col_idx_tmp)] = [float(record['overall']), record['helpful'], record['reviewText']]
+            self.__row_ind.append(row_idx_tmp)
+            self.__col_ind.append(col_idx_tmp)
 
     def get_row_size(self):
         return len(self.__row2user_dict)
@@ -59,12 +65,18 @@ class sparse_data:
         return self.__row2user_dict[row_id]
 
     # -1 means out of bound
-    def get_col(self, itemId):
+    def get_col_index(self, itemId):
         if itemId not in self.__item2col_dict:
             return -1
         return self.__item2col_dict[itemId]
 
-    def get_row(self, userId):
+    def get_row_index(self, userId):
         if userId not in self.__user2row_dict:
             return -1
         return self.__user2row_dict[userId]
+
+    def get_row_list(self):
+        return self.__row_ind
+
+    def get_col_list(self):
+        return self.__col_ind
