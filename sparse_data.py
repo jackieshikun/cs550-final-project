@@ -42,10 +42,10 @@ class sparse_data:
     col_ind = np.array(col_ind)
     row_ind = row_ind[sorted_idx]
     col_ind = col_ind[sorted_idx]
-    self.__seperate_train_test(row_ind, col_ind)
+    self.__separate_train_test(row_ind, col_ind)
 
   # default hold 20% of items purchesed for each user as test data.
-  def __seperate_train_test(self, row_idx, col_idx, prob=0.2):
+  def __separate_train_test(self, row_idx, col_idx, prob=0.2):
     ptr = 0
     i = 0
     size = len(row_idx)
