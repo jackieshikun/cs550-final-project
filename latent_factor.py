@@ -2,6 +2,8 @@ from sparse_data import sparse_data
 from scipy import sparse
 from sklearn.metrics import pairwise_distances
 import numpy as np
+import heapq
+import operator
 
 # Return: val_list, overall mean, user bias, item bias
 def preprocess(train_data):
@@ -13,11 +15,14 @@ def preprocess(train_data):
     if val == -1:
       print("[ERROR] getting rating from " + str(ridx) + str(cidx) + " error")
     val_list.append(val)
+  overall_mean = np.sum(val_list) / len(val_list)
   # Because of using the row based storage
   # directly count and sum is okay.
   row_counts = np.bincount(row_list)
   row_sums = np.bincount(row_list, weights=val_list)
   user_bias = row_sums / row_counts
+  user_bias = np.add(user_bias, -overall_mean)
+
   item_size = train_data.get_col_size()
   item_bias = np.zeros(item_size)
   col_sum = {}
@@ -31,12 +36,12 @@ def preprocess(train_data):
   for i in range(item_size):
     rec = col_sum[i]
     item_bias[i] = float(rec[0]) / rec[1]
-  overall_mean = np.sum(val_list) / len(val_list)
-  #rating_mat = sparse.csr_matrix((val_list, (row_list, col_list)), dtype=float)
+  item_bias = np.add(item_bias, -overall_mean)
   return val_list, overall_mean, user_bias, item_bias
 
 # Based on the sigma of SVD to decide how many factors to keep in latent factor
-def est_dimension(sparse_matrix, energy=0.8):
+def est_dimension(val_list, row_list, col_list, energy=0.8):
+  sparse_matrix = sparse.csr_matrix((val_list, (row_list, col_list)), dtype=float)
   U, sigma, VT = sparse.linalg.svds(sparse_matrix)
   sig2 = sigma ** 2
   threshold = sig2.sum() * energy
@@ -47,11 +52,13 @@ def est_dimension(sparse_matrix, energy=0.8):
       break
   return dimension
 
-#return b_u, b_i, p, q
+#return mean, b_u, b_i, p, q
 def fit(train_data, learning_rate_list, regulation_rate_list, error, iter_num):
   i = 0
-  rating_csr, overall_mean, user_bias, item_bias = preprocess(train_data)
-  factors = est_dimension(csr)
+  val_list, overall_mean, b_u, b_i = preprocess(train_data)
+  row_list = train_data.get_train_row_list()
+  col_list = train_data.get_train_col_list()
+  factors = est_dimension(val_list, row_list, col_list)
   user_size = train_data.get_row_size()
   item_size = train_data.get_col_size()
 
@@ -65,11 +72,9 @@ def fit(train_data, learning_rate_list, regulation_rate_list, error, iter_num):
   q_lr = learning_rate_list[3]
   b_u_rg = regulation_rate_list[0]
   b_i_rg = regulation_rate_list[1]
-  p_rg = regulation_rate_list[3]
-  q_rg = regulation_rate_list[4]
+  p_rg = regulation_rate_list[2]
+  q_rg = regulation_rate_list[3]
 
-  row_list = train_data.get_train_row_list()
-  col_list = train_data.get_train_col_list()
   while i < iter_num:
     print("Processing iteration {}".format(i))
     total_err = 0
@@ -88,6 +93,28 @@ def fit(train_data, learning_rate_list, regulation_rate_list, error, iter_num):
     if total_err <= error:
       break
     i += 1
+  return mean, b_u, b_i, p, q
+
+def predict(data, mean, b_u, b_i, p, q, top_n = 10):
+  prediction = []
+  prediction_col = []
+  for i in range(data.get_row_size()):
+    train_col = data.slice_train_row(i)
+    pred = []
+    pred_col = []
+    b_u_i = b_u[i]
+    p_i = p[i]
+    for j in range(data.get_col_size()):
+      if j in train_col:
+        continue
+      r = mean + b_u_i + b_i[j] + p_i * q[j].T
+      pred.append(r)
+      pred_col.append(j)
+    top_idx = zip(*heapq.nlargest(top_n, enumerate(a), key=operator.itemgetter(1)))[0]
+    pred = np.array(pred)
+    pred_col = np.array(pred_col)
+    prediction.append(pred[top_idx])
+    prediction_col.append(pred_col[top_idx])
 
 if __name__ == '__main__':
   data = sparse_data("test.json")
@@ -102,6 +129,5 @@ if __name__ == '__main__':
   #print(data.get_val(0,0, 'rating'))
   #print(data.get_val(0,0, 'reviewText'))
   #print(data.get_entry_size())
-  rating_mat, overall_mean, user_bias, item_bias = preprocess(data)
   #print(pairwise_distances(rating_mat))
   #est_dimension(rating_mat)

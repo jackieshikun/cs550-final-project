@@ -119,3 +119,29 @@ class sparse_data:
 
   def get_test_col_list(self):
     return self.__col_test_ind
+
+  def __bisearch_left(self, row_list, val):
+    i = bisect_left(row_list, val)
+    if i != len(row_list) and row_list[i] == val:
+      return i
+    return -1
+
+  # return col_idx of searched row
+  def slice_test_row(self, rowId):
+    start = self.__bisearch_left(self.__row_test_ind, rowId)
+    if start == -1:
+      return []
+    i = start
+    while i < len(self.__row_test_ind) and self.__row_test_ind[i] == rowId:
+      i += 1
+    return self.__col_test_ind[start: i]
+
+  # return col_idx of searched row
+  def slice_train_row(self, rowId):
+    start = self.__bisearch_left(self.__row_train_ind, rowId)
+    if start == -1:
+      return []
+    i = start
+    while i < len(self.__row_train_ind) and self.__row_train_ind[i] == rowId:
+      i += 1
+    return self.__col_train_ind[start: i]
