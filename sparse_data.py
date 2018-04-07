@@ -2,6 +2,7 @@ import json
 from review_enum import review_enum
 import random
 import numpy as np
+import bisect
 class sparse_data:
   __row2user_dict = {}
   __user2row_dict = {}
@@ -121,7 +122,7 @@ class sparse_data:
     return self.__col_test_ind
 
   def __bisearch_left(self, row_list, val):
-    i = bisect_left(row_list, val)
+    i = bisect.bisect_left(row_list, val)
     if i != len(row_list) and row_list[i] == val:
       return i
     return -1

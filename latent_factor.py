@@ -39,32 +39,20 @@ def preprocess(train_data):
   item_bias = np.add(item_bias, -overall_mean)
   return val_list, overall_mean, user_bias, item_bias
 
-# Based on the sigma of SVD to decide how many factors to keep in latent factor
-def est_dimension(val_list, row_list, col_list, energy=0.8):
-  sparse_matrix = sparse.csr_matrix((val_list, (row_list, col_list)), dtype=float)
-  U, sigma, VT = sparse.linalg.svds(sparse_matrix)
-  sig2 = sigma ** 2
-  threshold = sig2.sum() * energy
-  dimension = sigma.shape[0]
-  while dimension > 0:
-    dimension -= 1
-    if sig2[:dimension].sum() <= threshold:
-      break
-  return dimension
-
 #return mean, b_u, b_i, p, q
 def fit(train_data, learning_rate_list, regulation_rate_list, error, iter_num):
   i = 0
   val_list, overall_mean, b_u, b_i = preprocess(train_data)
   row_list = train_data.get_train_row_list()
   col_list = train_data.get_train_col_list()
-  factors = est_dimension(val_list, row_list, col_list)
+  #factors = est_dimension(val_list, row_list, col_list)
+  factors = 100
   user_size = train_data.get_row_size()
   item_size = train_data.get_col_size()
 
   # mean, std, (shape)
-  p = np.random.normal(0, 0.1, (user_size, factors))
-  q = np.random.normal(0, 0.1, (item_size, factors))
+  p = np.random.normal(0, 1, (user_size, factors))
+  q = np.random.normal(0, 1, (item_size, factors))
 
   b_u_lr = learning_rate_list[0]
   b_i_lr = learning_rate_list[1]
@@ -77,25 +65,26 @@ def fit(train_data, learning_rate_list, regulation_rate_list, error, iter_num):
 
   while i < iter_num:
     print("Processing iteration {}".format(i))
-    total_err = 0
+    total_err = 0.0
     for idx in range(len(val_list)):
       r = row_list[idx]
       c = col_list[idx]
-      r = val_list[idx]
-      pr = r[r]
+      val = val_list[idx]
+      pr = p[r]
       qc = q[c]
-      err = r - (overall_mean + b_u[r] + b_i[c] + np.dot(pr, qc.T)
-      total_err += err ** 2
-      b_u[r] += b_u_lr * (err - b_u_rg * b_u[r])
-      b_i[c] += b_i_lr * (err - b_i_rg * b_i[c])
-      p[r] += p_lr * (err * qc + p_rg * pr)
-      q[c] += q_lr * (err * pr + q_rt * qc)
+      err = val - (overall_mean + b_u[r] + b_i[c] + np.dot(pr, qc.T))
+      total_err += (err ** 2)
+      b_u[r] += np.dot(b_u_lr, (err - np.dot(b_u_rg, b_u[r])))
+      b_i[c] += np.dot(b_i_lr, (err - np.dot(b_i_rg, b_i[c])))
+      p[r] += np.dot(p_lr, np.add(np.dot(err, qc), np.dot(p_rg, pr)))
+      q[c] += np.dot(q_lr, np.add(np.dot(err, pr), np.dot(q_rg, qc)))
     if total_err <= error:
       break
+    break
     i += 1
-  return mean, b_u, b_i, p, q
+  return overall_mean, b_u, b_i, p, q
 
-def predict(data, mean, b_u, b_i, p, q, top_n = 10):
+def predict(data, mean, b_u, b_i, p, q, top_n=10):
   prediction = []
   prediction_col = []
   for i in range(data.get_row_size()):
@@ -107,22 +96,24 @@ def predict(data, mean, b_u, b_i, p, q, top_n = 10):
     for j in range(data.get_col_size()):
       if j in train_col:
         continue
-      r = mean + b_u_i + b_i[j] + p_i * q[j].T
+      r = mean + b_u_i + b_i[j] + np.dot(p_i, q[j].T)
       pred.append(r)
       pred_col.append(j)
-    top_idx = zip(*heapq.nlargest(top_n, enumerate(a), key=operator.itemgetter(1)))[0]
-    pred = np.array(pred)
-    pred_col = np.array(pred_col)
-    prediction.append(pred[top_idx])
-    prediction_col.append(pred_col[top_idx])
+    top_idx = zip(*heapq.nlargest(top_n, enumerate(pred), key=operator.itemgetter(1)))[0]
+
+    pred_sorted = []
+    pred_col_sorted = []
+    for idx in top_idx:
+      pred_sorted.append(pred[idx])
+      pred_col_sorted.append(pred_col[idx])
+    prediction.append(pred_sorted)
+    prediction_col.append(pred_col_sorted)
+  return prediction, prediction_col
 
 if __name__ == '__main__':
   data = sparse_data("test.json")
-  print(len(data.get_train_row_list()))
-  print(len(data.get_train_col_list()))
-  print(len(data.get_test_row_list()))
-  print(len(data.get_test_col_list()))
-  print(data.get_entry_size())
+  mean, b_u, b_i, p, q = fit(data, [0.005,0.005,0.005,0.005], [0.02,0.02,0.02,0.02], 0.01, 20)
+  print(predict(data, mean, b_u, b_i, p, q))
   #print(data.get_row_size())
   #print(data.get_row_index("AO94DHGC771SJ"))
   #print(data.get_col_index("0528881469"))
