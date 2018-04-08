@@ -41,19 +41,17 @@ def preprocess(train_data):
   return val_list, overall_mean, user_bias, item_bias
 
 #return mean, b_u, b_i, p, q
-def fit(train_data, learning_rate_list, regulation_rate_list, epsilon, max_iter_num):
+def fit(train_data, learning_rate_list, regulation_rate_list, epsilon=0.1, max_iter_num=20, factors=5):
   i = 0
   val_list, overall_mean, b_u, b_i = preprocess(train_data)
   row_list = train_data.get_train_row_list()
   col_list = train_data.get_train_col_list()
-  #factors = est_dimension(val_list, row_list, col_list)
-  factors = 100
   user_size = train_data.get_row_size()
   item_size = train_data.get_col_size()
 
   # mean, std, (shape)
-  p = np.random.normal(0, 1, (user_size, factors))
-  q = np.random.normal(0, 1, (item_size, factors))
+  p = np.random.normal(0, 0.1, (user_size, factors))
+  q = np.random.normal(0, 0.1, (item_size, factors))
 
   b_u_lr = learning_rate_list[0]
   b_i_lr = learning_rate_list[1]
@@ -109,13 +107,14 @@ def predict(data, mean, b_u, b_i, p, q, top_n=10):
     for idx in top_idx:
       pred_sorted.append(pred[idx])
       pred_col_sorted.append(pred_col[idx])
+    print(pred_sorted)
     prediction.append(pred_sorted)
     prediction_col.append(pred_col_sorted)
   return prediction, prediction_col
 
 if __name__ == '__main__':
   data = sparse_data("test.json")
-  mean, b_u, b_i, p, q = fit(data, [0.005,0.005,0.005,0.005], [0.02,0.02,0.02,0.02], 0.01, 20)
+  mean, b_u, b_i, p, q = fit(data, [0.005,0.005,0.005,0.005], [0.02,0.02,0.02,0.02])
   print(predict(data, mean, b_u, b_i, p, q))
   #print(data.get_row_size())
   #print(data.get_row_index("AO94DHGC771SJ"))
