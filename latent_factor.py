@@ -64,7 +64,7 @@ def fit(train_data, learning_rate_list, regulation_rate_list, epsilon, max_iter_
   p_rg = regulation_rate_list[2]
   q_rg = regulation_rate_list[3]
 
-  while i < iter_num:
+  while i < max_iter_num:
     print("Processing iteration {}".format(i))
     total_err = 0.0
     pre_total_err = 0.0
@@ -75,13 +75,13 @@ def fit(train_data, learning_rate_list, regulation_rate_list, epsilon, max_iter_
       pr = p[r]
       qc = q[c]
       err = val - (overall_mean + b_u[r] + b_i[c] + np.dot(pr, qc.T))
-      total_err += (err ** 2)
+      total_err += abs(err)
       b_u[r] += np.dot(b_u_lr, (err - np.dot(b_u_rg, b_u[r])))
       b_i[c] += np.dot(b_i_lr, (err - np.dot(b_i_rg, b_i[c])))
       p[r] += np.dot(p_lr, np.add(np.dot(err, qc), np.dot(p_rg, pr)))
       q[c] += np.dot(q_lr, np.add(np.dot(err, pr), np.dot(q_rg, qc)))
     print(total_err)
-    if total_err - pre_total_err <= epsilon:
+    if abs(total_err - pre_total_err) <= epsilon:
       break
     pre_total_err = total_err
     i += 1
