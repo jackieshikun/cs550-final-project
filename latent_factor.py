@@ -4,6 +4,7 @@ from sklearn.metrics import pairwise_distances
 import numpy as np
 import heapq
 import operator
+import math
 
 # Return: val_list, overall mean, user bias, item bias
 def preprocess(train_data):
@@ -40,7 +41,7 @@ def preprocess(train_data):
   return val_list, overall_mean, user_bias, item_bias
 
 #return mean, b_u, b_i, p, q
-def fit(train_data, learning_rate_list, regulation_rate_list, error, iter_num):
+def fit(train_data, learning_rate_list, regulation_rate_list, epsilon, max_iter_num):
   i = 0
   val_list, overall_mean, b_u, b_i = preprocess(train_data)
   row_list = train_data.get_train_row_list()
@@ -66,6 +67,7 @@ def fit(train_data, learning_rate_list, regulation_rate_list, error, iter_num):
   while i < iter_num:
     print("Processing iteration {}".format(i))
     total_err = 0.0
+    pre_total_err = 0.0
     for idx in range(len(val_list)):
       r = row_list[idx]
       c = col_list[idx]
@@ -78,9 +80,10 @@ def fit(train_data, learning_rate_list, regulation_rate_list, error, iter_num):
       b_i[c] += np.dot(b_i_lr, (err - np.dot(b_i_rg, b_i[c])))
       p[r] += np.dot(p_lr, np.add(np.dot(err, qc), np.dot(p_rg, pr)))
       q[c] += np.dot(q_lr, np.add(np.dot(err, pr), np.dot(q_rg, qc)))
-    if total_err <= error:
+    print(total_err)
+    if total_err - pre_total_err <= epsilon:
       break
-    break
+    pre_total_err = total_err
     i += 1
   return overall_mean, b_u, b_i, p, q
 
