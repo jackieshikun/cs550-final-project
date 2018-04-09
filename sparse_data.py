@@ -3,17 +3,23 @@ from review_enum import review_enum
 import random
 import numpy as np
 import bisect
+from sklearn.feature_extraction import stop_words
+
 class sparse_data:
   __row2user_dict = {}
   __user2row_dict = {}
   __col2item_dict = {}
   __item2col_dict = {}
-  #(row,col), [rate, [helpful, unhelpful], review_text]
+  #(row,col), [rate, [helpful, unhelpful], review_text(np.array)]
   __data = {}
   __row_train_ind = []
   __col_train_ind = []
   __row_test_ind = []
   __col_test_ind = []
+
+  # Review Text Extraction
+  __word2id = {}
+  __id2word = {}
   def __init__(self, filename):
     with open(filename, "r") as f:
       lines = f.readlines()
@@ -35,7 +41,18 @@ class sparse_data:
         col_count += 1
       row_idx_tmp = self.__user2row_dict[userId]
       col_idx_tmp = self.__item2col_dict[itemId]
-      self.__data[(row_idx_tmp, col_idx_tmp)] = [float(record['overall']), record['helpful'], record['reviewText']]
+      # parse the review text to save memory
+      rv = record['reviewText']
+      review_words = []
+      for word in rv:
+        if word in stop_words.ENGLISH_STOP_WORDS:
+          continue
+        if word not in self.__word2id:
+          self.__word2id[word] = n_word
+          self.__id2word[n_word] = word
+          n_word += 1
+        review_words.append(self.__word2id[word])
+      self.__data[(row_idx_tmp, col_idx_tmp)] = [float(record['overall']), record['helpful'], np.array(review_words)]
       row_ind.append(row_idx_tmp)
       col_ind.append(col_idx_tmp)
     sorted_idx = np.argsort(row_ind)
@@ -65,6 +82,9 @@ class sparse_data:
           self.__row_train_ind += list(row_idx[np.add(train_idx, i)])
           self.__col_train_ind += list(col_idx[np.add(train_idx, i)])
       i = ptr
+
+  def get_word_size(self):
+    return len(self.__word2id)
 
   def get_row_size(self):
     return len(self.__row2user_dict)
@@ -108,6 +128,16 @@ class sparse_data:
     if userId not in self.__user2row_dict:
       return -1
     return self.__user2row_dict[userId]
+
+  def get_word_num(self, word):
+    if word not in self.__word2id:
+      return -1
+    return self.__word2id[word]
+
+  def get_word(self, word_no):
+    if word_no not in self.__id2word:
+      return -1
+    return self.__id2word[word_no]
 
   def get_train_row_list(self):
     return self.__row_train_ind
