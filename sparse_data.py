@@ -10,7 +10,7 @@ class sparse_data:
   __user2row_dict = {}
   __col2item_dict = {}
   __item2col_dict = {}
-  #(row,col), [rate, [helpful, unhelpful], review_text(np.array)]
+  #(row,col), [rate, [helpful, unhelpful], review_text(list)]
   __data = {}
   __row_train_ind = []
   __col_train_ind = []
@@ -27,6 +27,7 @@ class sparse_data:
     col_count = 0
     row_ind = []
     col_ind = []
+    n_word = 0
     for line in lines:
       record = json.loads(line)
       userId = record['reviewerID']
@@ -52,7 +53,7 @@ class sparse_data:
           self.__id2word[n_word] = word
           n_word += 1
         review_words.append(self.__word2id[word])
-      self.__data[(row_idx_tmp, col_idx_tmp)] = [float(record['overall']), record['helpful'], np.array(review_words)]
+      self.__data[(row_idx_tmp, col_idx_tmp)] = [float(record['overall']), record['helpful'], review_words]
       row_ind.append(row_idx_tmp)
       col_ind.append(col_idx_tmp)
     sorted_idx = np.argsort(row_ind)
