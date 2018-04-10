@@ -1,4 +1,5 @@
 from sparse_data import sparse_data
+from scipy.optimize import fmin_l_bfgs_b
 import numpy as np
 import time
 
@@ -9,6 +10,7 @@ class HFT:
   __item_bias = []
   __rating_list = []
   __kappa = 1.0
+  __mu = 0.005
   __gamma_user = None
   __gamma_item = None
   __data = None
@@ -85,11 +87,11 @@ class HFT:
     print(total_words)
     for i in range(self.__n_word):
       self.__back_weight[i] /= total_words
-    self.__normalize_word_weight()
 
     t0 = time.time()
     self.__sample_topic()
     print(time.time() - t0)
+    self.__normalize_word_weight()
 
     # Initialize biases
     self.__overall_mean = np.sum(self.__rating_list) / len(self.__rating_list)
@@ -113,6 +115,7 @@ class HFT:
       rec = col_sum[i]
       self.__item_bias[i] = float(rec[0]) / rec[1]
     self.__item_bias = np.add(self.__item_bias, -self.__overall_mean)
+    self.fit()
 
   def __normalize_word_weight(self):
     avg_weight = np.divide(np.sum(self.__word_weight, axis=1), self.__K)
@@ -178,6 +181,48 @@ class HFT:
             self.__item_topic_cnt[col][old_topic] -= 1
             self.__item_topic_cnt[col][new_topic] += 1
             topic_list[i] = new_topic
+
+  # overall_mean, kappa, bias_user, bias_item, gamma_user, gamma_item, word_weight
+  # data, mu, item_topic_cnt, word_topic_cnt, back_weight
+  def fit(self):
+    args = [self.__overall_mean, self.__kappa, self.__user_bias, self.__item_bias, self.__gamma_user, self.__gamma_item, self.__word_weight]
+    parameters = [self.__data, self.__mu, self.__item_topic_cnt, self.__word_topic_cnt, self.__back_weight]
+    print(evaluation(args, parameters))
+
+
+def evaluation(args, parameters):
+  # parse
+  overall_mean = args[0]
+  kappa = args[1]
+  bias_user = args[2]
+  bias_item = args[3]
+  gamma_user = args[4]
+  gamma_item = args[5]
+  word_weight = args[6]
+  data = parameters[0]
+  mu = parameters[1]
+  item_topic_cnt = parameters[2]
+  word_topic_cnt = parameters[3]
+  back_weight = parameters[4]
+  row_list = data.get_train_row_list()
+  col_list = data.get_train_col_list()
+  result = 0.0
+  # compute error squre
+  for i in range(len(row_list)):
+    r = row_list[i]
+    c = col_list[i]
+    rating = data.get_val(r, c, 'rating')
+    err = rating - (overall_mean + bias_user[r] + bias_item[c] + np.dot(gamma_user[r], gamma_item[c].T))
+    result += (err * err)
+  # compute theta
+  # incase overflow, multiply mu at each stage
+  lz = np.log(np.sum(np.exp(np.dot(gamma_item, kappa)), axis=1))
+  result -= np.dot(mu, np.sum(np.multiply(item_topic_cnt, np.add(np.dot(kappa, gamma_item).T, -lz).T)))
+  # compute phi
+  sum_weight = np.add(back_weight, word_weight.T)
+  lw = np.log(np.sum(np.exp(sum_weight), axis=1))
+  result -= np.dot(mu, np.sum(np.multiply(word_topic_cnt, np.add(sum_weight.T, -lw))))
+  return result
 
 if __name__ == '__main__':
   data = sparse_data("test.json")
