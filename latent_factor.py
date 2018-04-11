@@ -114,6 +114,7 @@ def predict(data, mean, b_u, b_i, p, q, top_n=10):
 
 if __name__ == '__main__':
   data = sparse_data("test.json")
+  print(len(data.get_train_col_list()))
   mean, b_u, b_i, p, q = fit(data, [0.005,0.005,0.005,0.005], [0.02,0.02,0.02,0.02])
   print(predict(data, mean, b_u, b_i, p, q))
   #print(data.get_row_size())
