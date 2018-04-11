@@ -1,5 +1,6 @@
 from sparse_data import sparse_data
 from scipy.optimize import fmin_l_bfgs_b
+from scipy.special import expit
 import numpy as np
 import time
 from copy import deepcopy
@@ -111,6 +112,8 @@ class HFT:
       rec = col_sum[i]
       self.item_bias[i] = float(rec[0]) / rec[1]
     self.item_bias = np.add(self.item_bias, -self.overall_mean)
+    self.sample_topic()
+    self.normalize_word_weight()
     self.fit()
 
   def normalize_word_weight(self):
@@ -132,7 +135,7 @@ class HFT:
           old_cnt = topic_list[i][1]
           if old_cnt == 0:
             continue
-          topic_score = np.exp(np.add(np.multiply(self.kappa, self.gamma_item[col]), np.add(self.back_weight[i], self.word_weight[i])))
+          topic_score = expit(np.add(np.multiply(self.kappa, self.gamma_item[col]), np.add(self.back_weight[i], self.word_weight[i])))
           topic_sum = np.sum(topic_score)
           topic_score /= topic_sum
           indicator = random_list[i]
@@ -152,7 +155,7 @@ class HFT:
       topic_score_c_w = np.zeros((self.n_item, self.n_word, self.K))
       for col in range(self.n_item):
         for word in range(self.n_word):
-          topic_score = np.exp(np.add(np.multiply(self.kappa, self.gamma_item[col]), np.add(self.back_weight[word], self.word_weight[word])))
+          topic_score = expit(np.add(np.multiply(self.kappa, self.gamma_item[col]), np.add(self.back_weight[word], self.word_weight[word])))
           topic_sum = np.sum(topic_score)
           topic_score_c_w[col, word] = topic_score / topic_sum
       for rec, topic_list in self.word_topics.items():
@@ -246,24 +249,24 @@ class HFT:
       i -= 1
 
   def fit(self):
-    args = self.set_args(self.overall_mean, self.kappa, self.user_bias, self.item_bias, self.gamma_user, self.gamma_item, self.word_weight)
-    parameters = [self]
-    t = time.time()
-    res, val, d = fmin_l_bfgs_b(evaluation, np.array(args), fprime=derivation, args=parameters)
-    print(time.time() - t)
-    print(val, d)
+    i = 0
+    while i < 20:
+      args = self.set_args(self.overall_mean, self.kappa, self.user_bias, self.item_bias, self.gamma_user, self.gamma_item, self.word_weight)
+      parameters = [self]
+      t = time.time()
+      res, val, d = fmin_l_bfgs_b(evaluation, np.array(args), fprime=derivation, args=parameters)
+      self.set_args_back(res)
+      print(time.time() - t)
+      print(val, d)
+      self.sample_topic()
+      self.normalize_word_weight()
+      i +=1
 
 # we don't need to update the arguments only calculate the derivation
 def evaluation(args, *parameters):
   # parse
   obj = parameters[0]
   overall_mean, kappa, bias_user, bias_item, gamma_user, gamma_item, word_weight = obj.get_args(args)
-
-  obj.set_args_back(args)
-  obj.sample_topic()
-  obj.normalize_word_weight()
-  word_weight = obj.word_weight
-  obj.update_word_weight_para(word_weight, args)
 
   data = obj.data
   mu = obj.mu
@@ -282,12 +285,13 @@ def evaluation(args, *parameters):
     result += (err * err)
   # compute theta
   # incase overflow, multiply mu at each stage
-  lz = np.log(np.sum(np.exp(np.dot(gamma_item, kappa)), axis=1))
+  lz = np.log(np.sum(expit(np.dot(gamma_item, kappa)), axis=1))
   result -= np.dot(mu, np.sum(np.multiply(item_topic_cnt, np.add(np.dot(kappa, gamma_item).T, -lz).T)))
   # compute phi
   sum_weight = np.add(back_weight, word_weight.T)
-  lw = np.log(np.sum(np.exp(sum_weight), axis=1))
+  lw = np.log(np.sum(expit(sum_weight), axis=1))
   result -= np.dot(mu, np.sum(np.multiply(word_topic_cnt, np.add(sum_weight.T, -lw))))
+  print(kappa)
   return result
 
 def derivation(args, *parameters):
@@ -318,14 +322,14 @@ def derivation(args, *parameters):
     dbias_item[c] += err
     dgamma_user[r] = np.add(np.dot(gamma_item[c], err), dgamma_user[r])
     dgamma_item[c] = np.add(np.dot(gamma_user[r], err), dgamma_item[c])
-  expz = np.exp(np.dot(gamma_item, kappa))
+  expz = expit(np.dot(gamma_item, kappa))
   sz = np.sum(expz, axis=1)
   # n_item * K
-  tmp = np.dot(-mu, np.add(item_topic_cnt, -np.divide(expz.T), sz).T))
+  tmp = np.dot(-mu, np.add(item_topic_cnt, -np.divide(expz.T, sz).T))
   dgamma_item = np.add(dgamma_item, np.dot(kappa, tmp))
   dkappa = np.sum(np.multiply(gamma_item, tmp))
 
-  sum_weight_exp = np.exp(np.add(back_weight, word_weight.T))
+  sum_weight_exp = expit(np.add(back_weight, word_weight.T))
   sw = np.sum(sum_weight_exp, axis=1)
   dword_weight = np.dot(-mu, np.add(word_topic_cnt, -np.divide(sum_weight_exp.T, sw)))
 
