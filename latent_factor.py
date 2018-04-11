@@ -82,6 +82,7 @@ def fit(train_data, learning_rate_list, regulation_rate_list, epsilon=0.1, max_i
     if abs(total_err - pre_total_err) <= epsilon:
       break
     pre_total_err = total_err
+    total_err = 0.0
     i += 1
   return overall_mean, b_u, b_i, p, q
 
