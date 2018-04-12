@@ -4,6 +4,7 @@ import random
 import numpy as np
 import bisect
 from sklearn.feature_extraction import stop_words
+import re
 
 class sparse_data:
   __row2user_dict = {}
@@ -45,7 +46,8 @@ class sparse_data:
       # parse the review text to save memory
       rv = record['reviewText']
       review_words = []
-      for word in rv:
+      for word in re.split(r"\W+", rv):
+        word = word.lower()
         if word in stop_words.ENGLISH_STOP_WORDS:
           continue
         if word not in self.__word2id:

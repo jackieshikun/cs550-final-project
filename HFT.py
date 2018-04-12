@@ -6,13 +6,12 @@ import time
 from copy import deepcopy
 
 class HFT:
-  optimize_sample = True
   overall_mean = 0.0
   user_bias = []
   item_bias = []
   rating_list = []
   kappa = 1.0
-  mu = 10
+  mu = 0.1
   gamma_user = None
   gamma_item = None
   data = None
@@ -24,7 +23,6 @@ class HFT:
   exp_threshold = 705.0
 
   # (row,col), [topic number]
-  # optimize {col, [topic, counts]}
   word_topics = {}
   # n_word * K
   word_topic_cnt = None
@@ -38,12 +36,11 @@ class HFT:
   item_w_cnt = None
   topic_w_cnt = None
 
-  def __init__(self, sparse_data, optimize_sample=True):
+  def __init__(self, sparse_data):
     self.data = sparse_data
     self.n_item = self.data.get_col_size()
     self.n_user = self.data.get_row_size()
     self.n_word = self.data.get_word_size()
-    self.optimize_sample = optimize_sample
     row_list = self.data.get_train_row_list()
     col_list = self.data.get_train_col_list()
     self.word_topic_cnt = np.zeros((self.n_word, self.K), dtype=np.float64)
@@ -57,14 +54,6 @@ class HFT:
     # extract from data
     total_words = 0
     # Assign random topic to unique words
-    if self.optimize_sample == True:
-      for item in range(self.n_item):
-        topic_list = np.random.randint(0, self.K, self.n_word)
-        x_list = []
-        for topic in topic_list:
-          x_list.append([topic, 0])
-        self.word_topics.setdefault(item, x_list)
-
     for idx in range(len(row_list)):
       r = row_list[idx]
       c = col_list[idx]
@@ -73,31 +62,20 @@ class HFT:
       self.rating_list.append(rating)
       # random assignment topics
       review_len = len(rv)
-      if self.optimize_sample == True:
-        for i in range(review_len):
-          word = rv[i]
-          topic = self.word_topics[c][word][0]
-          self.word_topics[c][word][1] += 1
-          self.item_topic_cnt[c, topic] += 1
-          self.word_topic_cnt[word, topic] +=1
-          self.back_weight[word] += 1
-          self.topic_w_cnt[topic] += 1
-          self.item_w_cnt[c] += 1
-
-      else:
-        topic_list = np.random.randint(0, self.K, review_len)
-        self.word_topics.setdefault((r,c), topic_list)
-        for i in range(review_len):
-          word = rv[i]
-          topic = topic_list[i]
-          self.item_topic_cnt[c, topic] += 1
-          self.word_topic_cnt[word, topic] +=1
-          self.back_weight[word] += 1
-          self.topic_w_cnt[topic] += 1
-          self.item_w_cnt[c] += 1
+      topic_list = np.random.randint(0, self.K, review_len)
+      self.word_topics.setdefault((r,c), topic_list)
+      for i in range(review_len):
+        word = rv[i]
+        topic = topic_list[i]
+        self.item_topic_cnt[c, topic] += 1
+        self.word_topic_cnt[word, topic] +=1
+        self.back_weight[word] += 1
+        self.topic_w_cnt[topic] += 1
+        self.item_w_cnt[c] += 1
       total_words += review_len
     for i in range(self.n_word):
       self.back_weight[i] /= total_words
+    print(total_words)
 
     # Initialize biases
     self.overall_mean = np.sum(self.rating_list) / len(self.rating_list)
@@ -121,9 +99,21 @@ class HFT:
       rec = col_sum[i]
       self.item_bias[i] = float(rec[0]) / rec[1]
     self.item_bias = np.add(self.item_bias, -self.overall_mean)
+    t0 = time.time()
     self.sample_topic()
+    print(time.time() - t0)
     self.normalize_word_weight()
+    self.top_words()
     self.fit()
+
+  def top_words(self, top_n=10):
+    top_idx = np.argsort(self.word_weight, axis=0)[::-1]
+    for i in range(self.K):
+      print("topic " + str(i))
+      out_list = []
+      for j in range(top_n):
+        out_list.append((self.data.get_word(top_idx[j,i]), self.word_weight[top_idx[j,i], i]))
+      print(out_list)
 
   def normalize_word_weight(self):
     avg_weight = np.divide(np.sum(self.word_weight, axis=1), self.K)
@@ -131,70 +121,36 @@ class HFT:
     self.word_weight = np.add(self.word_weight.T, -avg_weight).T
 
   # Gibbs sampling
-  # Performance imporvement for optimization
-  # 100K entry
-  # before sample optimization 187.9s
-  # after sample optimization 3.7s
   def sample_topic(self):
-    if self.optimize_sample == True:
-      for col, topic_list in self.word_topics.items():
-        random_list = np.random.sample(self.n_word)
-        for i in range(self.n_word):
-          old_topic = topic_list[i][0]
-          old_cnt = topic_list[i][1]
-          if old_cnt == 0:
-            continue
-          topic_score = np.exp(np.add(np.multiply(self.kappa, self.gamma_item[col]), np.add(self.back_weight[i], self.word_weight[i])))
-          topic_sum = np.sum(topic_score)
-          topic_score /= topic_sum
-          indicator = random_list[i]
-          new_topic = 0
-          while new_topic < self.K:
-            indicator -= topic_score[new_topic]
-            if indicator < 0:
-              break
-            new_topic += 1
-          if new_topic != old_topic:
-            self.word_topic_cnt[i][old_topic] -= old_cnt
-            self.word_topic_cnt[i][new_topic] += old_cnt
-            self.item_topic_cnt[col][old_topic] -= old_cnt
-            self.item_topic_cnt[col][new_topic] += old_cnt
-            self.topic_w_cnt[new_topic] += 1
-            self.topic_w_cnt[old_topic] -= 1
-            topic_list[i][0] = new_topic
-    else:
-      # scores only calculate once
-      topic_score_c_w = np.zeros((self.n_item, self.n_word, self.K))
-      for col in range(self.n_item):
-        for word in range(self.n_word):
-          topic_score = np.exp(np.add(np.multiply(self.kappa, self.gamma_item[col]), np.add(self.back_weight[word], self.word_weight[word])))
-          topic_sum = np.sum(topic_score)
-          topic_score_c_w[col, word] = topic_score / topic_sum
-      for rec, topic_list in self.word_topics.items():
-        row = rec[0]
-        col = rec[1]
-        rv = self.data.get_val(row, col, 'reviewText')
-        rv_len = len(topic_list)
-        random_list = np.random.sample(rv_len)
-        for i in range(rv_len):
-          word = rv[i]
-          indicator = random_list[i]
-          topic_score = topic_score_c_w[col, word]
-          new_topic = 0
-          while new_topic < self.K:
-            indicator -= topic_score[new_topic]
-            if indicator < 0:
-              break
-            new_topic += 1
-          old_topic = topic_list[i]
-          if new_topic != old_topic:
-            self.word_topic_cnt[word][old_topic] -= 1
-            self.word_topic_cnt[word][new_topic] += 1
-            self.item_topic_cnt[col][old_topic] -= 1
-            self.item_topic_cnt[col][new_topic] += 1
-            self.topic_w_cnt[new_topic] += 1
-            self.topic_w_cnt[old_topic] -= 1
-            topic_list[i] = new_topic
+    for rec, topic_list in self.word_topics.items():
+      row = rec[0]
+      col = rec[1]
+      rv = self.data.get_val(row, col, 'reviewText')
+      rv_len = len(topic_list)
+      random_list = np.random.sample(rv_len)
+      for i in range(rv_len):
+        word = rv[i]
+        base = np.add(np.multiply(self.kappa, self.gamma_item[col]), np.add(self.back_weight[word], self.word_weight[word]))
+        base[base>self.exp_threshold] = self.exp_threshold
+        topic_score = np.exp(base)
+        topic_sum = np.sum(topic_score)
+        topic_score = topic_score / topic_sum
+        indicator = random_list[i]
+        new_topic = 0
+        while new_topic < self.K - 1:
+          indicator -= topic_score[new_topic]
+          if indicator < 0:
+            break
+          new_topic += 1
+        old_topic = topic_list[i]
+        if new_topic != old_topic:
+          self.word_topic_cnt[word][old_topic] -= 1
+          self.word_topic_cnt[word][new_topic] += 1
+          self.item_topic_cnt[col][old_topic] -= 1
+          self.item_topic_cnt[col][new_topic] += 1
+          self.topic_w_cnt[new_topic] += 1
+          self.topic_w_cnt[old_topic] -= 1
+          topic_list[i] = new_topic
 
   # overall_mean, kappa, bias_user, bias_item, gamma_user, gamma_item, word_weight
   def get_args(self, arglist):
@@ -268,6 +224,9 @@ class HFT:
     total_err = 0.0
     row_list = self.data.get_train_row_list()
     col_list = self.data.get_train_col_list()
+
+    # row_list = self.data.get_test_row_list()
+    # col_list = self.data.get_test_col_list()
     for idx in range(len(row_list)):
       r = row_list[idx]
       c = col_list[idx]
@@ -279,19 +238,23 @@ class HFT:
     total_err = 0.0
     while i < 20:
       args = self.set_args(self.overall_mean, self.kappa, self.user_bias, self.item_bias, self.gamma_user, self.gamma_item, self.word_weight)
-      parameters = [self]
+      parameters = (self, None)
       t = time.time()
-      res, val, d = fmin_l_bfgs_b(evaluation, np.array(args), fprime=derivation, args=parameters, factr=10.0, maxls=50)
+      res, val, d = fmin_l_bfgs_b(evaluation, np.array(args), fprime=derivation, args=parameters)
+      # res, val, d = fmin_l_bfgs_b(evaluation, np.array(args), args=parameters,approx_grad=True, factr=10.0, maxls=50)
       self.set_args_back(res)
       print(time.time() - t)
       print(val, d)
       self.sample_topic()
       self.normalize_word_weight()
+      # self.top_words()
       for idx in range(len(row_list)):
         r = row_list[idx]
         c = col_list[idx]
         rating = self.data.get_val(r, c, 'rating')
-        err = rating - (self.overall_mean + self.user_bias[r] + self.item_bias[c] + np.dot(self.gamma_user[r], self.gamma_item[c].T))
+        est = self.overall_mean + self.user_bias[r] + self.item_bias[c] + np.dot(self.gamma_user[r], self.gamma_item[c].T)
+        err = rating - est
+        #print(rating, est)
         total_err += (err * err)
       rmse = math.sqrt(total_err / len(row_list))
       print(rmse)
@@ -345,6 +308,7 @@ def derivation(args, *parameters):
   row_list = data.get_train_row_list()
   col_list = data.get_train_col_list()
   doverall_mean = 0.0
+  dkappa = 0.0
   dbias_user = np.zeros(obj.n_user)
   dbias_item = np.zeros(obj.n_item)
   dgamma_user = np.zeros((obj.n_user, obj.K), dtype=np.float64)
@@ -357,11 +321,11 @@ def derivation(args, *parameters):
     err = rating - (overall_mean + bias_user[r] + bias_item[c] + np.dot(gamma_user[r], gamma_item[c].T))
     err *= 2
     # derivative
-    doverall_mean += err
-    dbias_user[r] += err
-    dbias_item[c] += err
-    dgamma_user[r] = np.add(np.dot(gamma_item[c], err), dgamma_user[r])
-    dgamma_item[c] = np.add(np.dot(gamma_user[r], err), dgamma_item[c])
+    doverall_mean -= err
+    dbias_user[r] -= err
+    dbias_item[c] -= err
+    dgamma_user[r] = np.add(-np.dot(gamma_item[c], err), dgamma_user[r])
+    dgamma_item[c] = np.add(-np.dot(gamma_user[r], err), dgamma_item[c])
   gk = np.dot(gamma_item, kappa)
   gk[gk > obj.exp_threshold] = obj.exp_threshold
   expz = np.exp(gk)

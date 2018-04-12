@@ -5,6 +5,7 @@ import numpy as np
 import heapq
 import operator
 import math
+from HFT import HFT
 
 # Return: val_list, overall mean, user bias, item bias
 def preprocess(train_data):
@@ -62,10 +63,21 @@ def fit(train_data, learning_rate_list, regulation_rate_list, epsilon=0.1, max_i
   p_rg = regulation_rate_list[2]
   q_rg = regulation_rate_list[3]
 
+  total_err = 0.0
+  pre_total_err = 0.0
+
+  for idx in range(len(row_list)):
+    r = row_list[idx]
+    c = col_list[idx]
+    rating = train_data.get_val(r, c, 'rating')
+    err = rating - (overall_mean + b_u[r] + b_i[c] + np.dot(p[r], q[c].T))
+    total_err += (err * err)
+  rmse = math.sqrt(total_err / len(row_list))
+  print("initial", rmse)
+  total_err = 0.0
+
   while i < max_iter_num:
     print("Processing iteration {}".format(i))
-    total_err = 0.0
-    pre_total_err = 0.0
     for idx in range(len(val_list)):
       r = row_list[idx]
       c = col_list[idx]
@@ -84,6 +96,16 @@ def fit(train_data, learning_rate_list, regulation_rate_list, epsilon=0.1, max_i
     pre_total_err = total_err
     total_err = 0.0
     i += 1
+
+  for idx in range(len(row_list)):
+    r = row_list[idx]
+    c = col_list[idx]
+    rating = train_data.get_val(r, c, 'rating')
+    err = rating - (overall_mean + b_u[r] + b_i[c] + np.dot(p[r], q[c].T))
+    total_err += (err * err)
+  rmse = math.sqrt(total_err / len(row_list))
+  print(rmse)
+  total_err = 0.0
   return overall_mean, b_u, b_i, p, q
 
 def predict(data, mean, b_u, b_i, p, q, top_n=10):
@@ -116,8 +138,9 @@ def predict(data, mean, b_u, b_i, p, q, top_n=10):
 if __name__ == '__main__':
   data = sparse_data("test.json")
   print(len(data.get_train_col_list()))
-  mean, b_u, b_i, p, q = fit(data, [0.005,0.005,0.005,0.005], [0.02,0.02,0.02,0.02])
-  print(predict(data, mean, b_u, b_i, p, q))
+  mean, b_u, b_i, p, q = fit(data, [0.005,0.005,0.005,0.005], [0.02,0.02,0.02,0.02], max_iter_num=30)
+  HFT(data)
+  #print(predict(data, mean, b_u, b_i, p, q))
   #print(data.get_row_size())
   #print(data.get_row_index("AO94DHGC771SJ"))
   #print(data.get_col_index("0528881469"))
