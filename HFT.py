@@ -12,7 +12,7 @@ class HFT:
   item_bias = []
   rating_list = []
   kappa = 1.0
-  mu = 0.005
+  mu = 10
   gamma_user = None
   gamma_item = None
   data = None
@@ -148,10 +148,12 @@ class HFT:
           topic_sum = np.sum(topic_score)
           topic_score /= topic_sum
           indicator = random_list[i]
-          for new_topic in range(self.K):
+          new_topic = 0
+          while new_topic < self.K:
             indicator -= topic_score[new_topic]
             if indicator < 0:
               break
+            new_topic += 1
           if new_topic != old_topic:
             self.word_topic_cnt[i][old_topic] -= old_cnt
             self.word_topic_cnt[i][new_topic] += old_cnt
@@ -178,10 +180,12 @@ class HFT:
           word = rv[i]
           indicator = random_list[i]
           topic_score = topic_score_c_w[col, word]
-          for new_topic in range(self.K):
+          new_topic = 0
+          while new_topic < self.K:
             indicator -= topic_score[new_topic]
             if indicator < 0:
               break
+            new_topic += 1
           old_topic = topic_list[i]
           if new_topic != old_topic:
             self.word_topic_cnt[word][old_topic] -= 1
@@ -264,13 +268,21 @@ class HFT:
     total_err = 0.0
     row_list = self.data.get_train_row_list()
     col_list = self.data.get_train_col_list()
+    for idx in range(len(row_list)):
+      r = row_list[idx]
+      c = col_list[idx]
+      rating = self.data.get_val(r, c, 'rating')
+      err = rating - (self.overall_mean + self.user_bias[r] + self.item_bias[c] + np.dot(self.gamma_user[r], self.gamma_item[c].T))
+      total_err += (err * err)
+    rmse = math.sqrt(total_err / len(row_list))
+    print("initial", rmse)
+    total_err = 0.0
     while i < 20:
       args = self.set_args(self.overall_mean, self.kappa, self.user_bias, self.item_bias, self.gamma_user, self.gamma_item, self.word_weight)
       parameters = [self]
       t = time.time()
-      res, val, d = fmin_l_bfgs_b(evaluation, np.array(args), fprime=derivation, args=parameters, maxls=50)
+      res, val, d = fmin_l_bfgs_b(evaluation, np.array(args), fprime=derivation, args=parameters, factr=10.0, maxls=50)
       self.set_args_back(res)
-      print(self.overall_mean)
       print(time.time() - t)
       print(val, d)
       self.sample_topic()
