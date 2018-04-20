@@ -11,7 +11,8 @@ class HFT:
   item_bias = []
   rating_list = []
   kappa = 1.0
-  mu = 0.1
+  mu = 0.001
+  vlambda = 0.001
   gamma_user = None
   gamma_item = None
   data = None
@@ -104,7 +105,7 @@ class HFT:
     print(time.time() - t0)
     self.normalize_word_weight()
     self.top_words()
-    self.fit()
+    self.fit(max_iter_num=30)
 
   def top_words(self, top_n=10):
     top_idx = np.argsort(self.word_weight, axis=0)[::-1]
@@ -219,29 +220,29 @@ class HFT:
       idx -= self.K
       i -= 1
 
-  def fit(self, epsilon=0.01):
+  def fit(self, epsilon=0.01, max_sample_num=20, max_iter_num=20):
     i = 0
     total_err = 0.0
-    row_list = self.data.get_train_row_list()
-    col_list = self.data.get_train_col_list()
+    # row_list = self.data.get_train_row_list()
+    # col_list = self.data.get_train_col_list()
 
-    # row_list = self.data.get_test_row_list()
-    # col_list = self.data.get_test_col_list()
+    row_list = self.data.get_test_row_list()
+    col_list = self.data.get_test_col_list()
     for idx in range(len(row_list)):
       r = row_list[idx]
       c = col_list[idx]
       rating = self.data.get_val(r, c, 'rating')
       err = rating - (self.overall_mean + self.user_bias[r] + self.item_bias[c] + np.dot(self.gamma_user[r], self.gamma_item[c].T))
-      total_err += (err * err)
-    rmse = math.sqrt(total_err / len(row_list))
+      total_err += (err / len(row_list)* err)
+    # rmse = math.sqrt(total_err)
+    rmse = total_err
     print("initial", rmse)
     total_err = 0.0
-    while i < 20:
+    while i < max_sample_num:
       args = self.set_args(self.overall_mean, self.kappa, self.user_bias, self.item_bias, self.gamma_user, self.gamma_item, self.word_weight)
       parameters = (self, None)
       t = time.time()
-      res, val, d = fmin_l_bfgs_b(evaluation, np.array(args), fprime=derivation, args=parameters)
-      # res, val, d = fmin_l_bfgs_b(evaluation, np.array(args), args=parameters,approx_grad=True, factr=10.0, maxls=50)
+      res, val, d = fmin_l_bfgs_b(evaluation, np.array(args), fprime=derivation, args=parameters, maxiter=max_iter_num)
       self.set_args_back(res)
       print(time.time() - t)
       print(val, d)
@@ -255,8 +256,9 @@ class HFT:
         est = self.overall_mean + self.user_bias[r] + self.item_bias[c] + np.dot(self.gamma_user[r], self.gamma_item[c].T)
         err = rating - est
         #print(rating, est)
-        total_err += (err * err)
-      rmse = math.sqrt(total_err / len(row_list))
+        total_err += (err / len(row_list) * err)
+      # rmse = math.sqrt(total_err)
+      rmse = total_err
       print(rmse)
       total_err = 0.0
       i += 1
@@ -269,6 +271,7 @@ def evaluation(args, *parameters):
 
   data = obj.data
   mu = obj.mu
+  vlambda = obj.vlambda
   item_topic_cnt = obj.item_topic_cnt
   word_topic_cnt = obj.word_topic_cnt
   back_weight = obj.back_weight
@@ -282,6 +285,9 @@ def evaluation(args, *parameters):
     rating = data.get_val(r, c, 'rating')
     err = rating - (overall_mean + bias_user[r] + bias_item[c] + np.dot(gamma_user[r], gamma_item[c].T))
     result += (err * err)
+  # consider regulation, if no set vlambda = 0
+  result += np.sum(np.dot(vlambda, np.square(gamma_item)))
+  result += np.sum(np.dot(vlambda, np.square(gamma_user)))
   # compute theta
   # incase overflow, multiply mu at each stage
   gk = np.dot(gamma_item, kappa)
@@ -300,6 +306,7 @@ def derivation(args, *parameters):
   overall_mean, kappa, bias_user, bias_item, gamma_user, gamma_item, word_weight = obj.get_args(args)
   data = obj.data
   mu = obj.mu
+  vlambda = obj.vlambda
   item_topic_cnt = obj.item_topic_cnt
   word_topic_cnt = obj.word_topic_cnt
   topic_w_cnt = obj.topic_w_cnt
@@ -324,8 +331,10 @@ def derivation(args, *parameters):
     doverall_mean -= err
     dbias_user[r] -= err
     dbias_item[c] -= err
-    dgamma_user[r] = np.add(-np.dot(gamma_item[c], err), dgamma_user[r])
-    dgamma_item[c] = np.add(-np.dot(gamma_user[r], err), dgamma_item[c])
+    gu = gamma_user[r]
+    gi = gamma_item[c]
+    dgamma_user[r] += np.add(-np.dot(gi, err), np.dot(vlambda, gu))
+    dgamma_item[c] += np.add(-np.dot(gu, err), np.dot(vlambda, gi))
   gk = np.dot(gamma_item, kappa)
   gk[gk > obj.exp_threshold] = obj.exp_threshold
   expz = np.exp(gk)

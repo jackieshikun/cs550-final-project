@@ -5,6 +5,7 @@ import numpy as np
 import heapq
 import operator
 import math
+from copy import deepcopy
 from HFT import HFT
 
 # Return: val_list, overall mean, user bias, item bias
@@ -36,13 +37,17 @@ def preprocess(train_data):
     else:
       col_sum.setdefault(col_idx, [val_list[idx], 1])
   for i in range(item_size):
-    rec = col_sum[i]
-    item_bias[i] = float(rec[0]) / rec[1]
+    if i in col_sum:
+      rec = col_sum[i]
+      item_bias[i] = float(rec[0]) / rec[1]
+    else:
+      item_bias[i] = 0.0
+
   item_bias = np.add(item_bias, -overall_mean)
   return val_list, overall_mean, user_bias, item_bias
 
 #return mean, b_u, b_i, p, q
-def fit(train_data, learning_rate_list, regulation_rate_list, epsilon=0.1, max_iter_num=20, factors=5):
+def fit(train_data, learning_rate_list, regulation_rate_list, epsilon=0.001, max_iter_num=50, factors=5):
   i = 0
   val_list, overall_mean, b_u, b_i = preprocess(train_data)
   row_list = train_data.get_train_row_list()
@@ -66,30 +71,37 @@ def fit(train_data, learning_rate_list, regulation_rate_list, epsilon=0.1, max_i
   total_err = 0.0
   pre_total_err = 0.0
 
-  for idx in range(len(row_list)):
-    r = row_list[idx]
-    c = col_list[idx]
+
+  trow_list = train_data.get_test_row_list()
+  tcol_list = train_data.get_test_col_list()
+  for idx in range(len(trow_list)):
+    r = trow_list[idx]
+    c = tcol_list[idx]
     rating = train_data.get_val(r, c, 'rating')
     err = rating - (overall_mean + b_u[r] + b_i[c] + np.dot(p[r], q[c].T))
-    total_err += (err * err)
-  rmse = math.sqrt(total_err / len(row_list))
+    total_err += (err / len(trow_list)* err)
+  # rmse = math.sqrt(total_err)
+  rmse = total_err
   print("initial", rmse)
   total_err = 0.0
 
   while i < max_iter_num:
     print("Processing iteration {}".format(i))
+    orign_p = deepcopy(p)
+    origin_q = deepcopy(q)
     for idx in range(len(val_list)):
       r = row_list[idx]
       c = col_list[idx]
       val = val_list[idx]
-      pr = p[r]
-      qc = q[c]
+      pr = orign_p[r]
+      qc = origin_q[c]
       err = val - (overall_mean + b_u[r] + b_i[c] + np.dot(pr, qc.T))
-      total_err += abs(err)
+      total_err += (err / len(val_list) * err)
       b_u[r] += np.dot(b_u_lr, (err - np.dot(b_u_rg, b_u[r])))
       b_i[c] += np.dot(b_i_lr, (err - np.dot(b_i_rg, b_i[c])))
-      p[r] += np.dot(p_lr, np.add(np.dot(err, qc), np.dot(p_rg, pr)))
-      q[c] += np.dot(q_lr, np.add(np.dot(err, pr), np.dot(q_rg, qc)))
+      p[r] += np.dot(p_lr, np.add(np.dot(err, qc), -np.dot(p_rg, pr)))
+      q[c] += np.dot(q_lr, np.add(np.dot(err, pr), -np.dot(q_rg, qc)))
+    # total_err = math.sqrt(total_err)
     print(total_err)
     if abs(total_err - pre_total_err) <= epsilon:
       break
@@ -97,13 +109,14 @@ def fit(train_data, learning_rate_list, regulation_rate_list, epsilon=0.1, max_i
     total_err = 0.0
     i += 1
 
-  for idx in range(len(row_list)):
-    r = row_list[idx]
-    c = col_list[idx]
+  for idx in range(len(trow_list)):
+    r = trow_list[idx]
+    c = tcol_list[idx]
     rating = train_data.get_val(r, c, 'rating')
     err = rating - (overall_mean + b_u[r] + b_i[c] + np.dot(p[r], q[c].T))
-    total_err += (err * err)
-  rmse = math.sqrt(total_err / len(row_list))
+    total_err += (err / len(trow_list) * err)
+  # rmse = math.sqrt(total_err)
+  rmse = total_err
   print(rmse)
   total_err = 0.0
   return overall_mean, b_u, b_i, p, q
@@ -136,9 +149,10 @@ def predict(data, mean, b_u, b_i, p, q, top_n=10):
   return prediction, prediction_col
 
 if __name__ == '__main__':
+  # data = sparse_data("Electronics_5.json")
   data = sparse_data("test.json")
   print(len(data.get_train_col_list()))
-  mean, b_u, b_i, p, q = fit(data, [0.005,0.005,0.005,0.005], [0.02,0.02,0.02,0.02], max_iter_num=30)
+  mean, b_u, b_i, p, q = fit(data, [0.005,0.005,0.005,0.005], [0.02,0.02,0.02,0.02])
   HFT(data)
   #print(predict(data, mean, b_u, b_i, p, q))
   #print(data.get_row_size())
