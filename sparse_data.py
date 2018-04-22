@@ -17,6 +17,8 @@ class sparse_data:
   __col_train_ind = []
   __row_test_ind = []
   __col_test_ind = []
+  __row_validation_ind = []
+  __col_validation_ind = []
 
   # Review Text Extraction
   __word2id = {}
@@ -46,8 +48,17 @@ class sparse_data:
       # parse the review text to save memory
       rv = record['reviewText']
       review_words = []
+      filter_str = '(.+(s|ing|ed)$|.+[0-9].+)'
+      re_filter = re.compile(filter_str)
       for word in re.split(r"\W+", rv):
         word = word.lower()
+        if word in self.__word2id:
+          review_words.append(self.__word2id[word])
+          continue
+        if len(word) <= 2:
+          continue
+        if re_filter.search(word):
+          continue
         if word in stop_words.ENGLISH_STOP_WORDS:
           continue
         if word not in self.__word2id:
@@ -58,33 +69,56 @@ class sparse_data:
       self.__data[(row_idx_tmp, col_idx_tmp)] = [float(record['overall']), record['helpful'], review_words]
       row_ind.append(row_idx_tmp)
       col_ind.append(col_idx_tmp)
+    print(n_word)
     sorted_idx = np.argsort(row_ind)
     row_ind = np.array(row_ind)
     col_ind = np.array(col_ind)
     row_ind = row_ind[sorted_idx]
     col_ind = col_ind[sorted_idx]
-    self.__separate_train_test(row_ind, col_ind)
+    row_train_ind, col_train_ind = self.__separate_train_test(row_ind, col_ind)
+    self.__separate_train_validation(row_train_ind, col_train_ind)
+
+  # default hold 10% of total train set as validation data.
+  def __separate_train_validation(self, row_idx, col_idx, prob=0.1):
+    entry_size = len(row_idx)
+    rand_idx = sorted(random.sample(xrange(0, entry_size), int(entry_size * prob)))
+    rand_ptr = 0
+    for i in range(entry_size):
+      r = row_idx[i]
+      c = col_idx[i]
+      if rand_ptr < len(rand_idx) and rand_idx[rand_ptr] == i:
+        rand_ptr += 1
+        self.__row_validation_ind.append(r)
+        self.__col_validation_ind.append(c)
+      else:
+        self.__row_train_ind.append(r)
+        self.__col_train_ind.append(c)
+    print("validation size", len(self.__row_validation_ind))
+    print("train size", len(self.__row_train_ind))
 
   # default hold 20% of items purchesed for each user as test data.
   def __separate_train_test(self, row_idx, col_idx, prob=0.2):
     ptr = 0
     i = 0
     size = len(row_idx)
+    row_train_ind = []
+    col_train_ind = []
     while i < size:
       while ptr < size and row_idx[i] == row_idx[ptr]:
         ptr += 1
       count = ptr - i
       if not count == 0:
         rand_size = int(count * prob)
-        rand_idx = random.sample(range(0, count), rand_size)
+        rand_idx = random.sample(xrange(0, count), rand_size)
         if not len(rand_idx) == 0:
           self.__row_test_ind += list(row_idx[np.add(rand_idx, i)])
           self.__col_test_ind += list(col_idx[np.add(rand_idx, i)])
         train_idx = [item for item in range(count) if item not in rand_idx]
         if not len(train_idx) == 0:
-          self.__row_train_ind += list(row_idx[np.add(train_idx, i)])
-          self.__col_train_ind += list(col_idx[np.add(train_idx, i)])
+          row_train_ind += list(row_idx[np.add(train_idx, i)])
+          col_train_ind += list(col_idx[np.add(train_idx, i)])
       i = ptr
+    return [row_train_ind, col_train_ind]
 
   def get_word_size(self):
     return len(self.__word2id)
@@ -153,6 +187,12 @@ class sparse_data:
 
   def get_test_col_list(self):
     return self.__col_test_ind
+
+  def get_validation_row_list(self):
+    return self.__row_validation_ind
+
+  def get_validation_col_list(self):
+    return self.__col_validation_ind
 
   def __bisearch_left(self, row_list, val):
     i = bisect.bisect_left(row_list, val)

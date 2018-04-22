@@ -23,6 +23,8 @@ def preprocess(train_data):
   # directly count and sum is okay.
   row_counts = np.bincount(row_list)
   row_sums = np.bincount(row_list, weights=val_list)
+  # avoid divide by 0
+  row_counts[row_counts == 0] = 1
   user_bias = row_sums / row_counts
   user_bias = np.add(user_bias, -overall_mean)
 
@@ -47,7 +49,7 @@ def preprocess(train_data):
   return val_list, overall_mean, user_bias, item_bias
 
 #return mean, b_u, b_i, p, q
-def fit(train_data, learning_rate_list, regulation_rate_list, epsilon=0.001, max_iter_num=50, factors=5):
+def fit(train_data, learning_rate_list, regulation_rate_list, epsilon=0.001, max_iter_num=20, factors=5):
   i = 0
   val_list, overall_mean, b_u, b_i = preprocess(train_data)
   row_list = train_data.get_train_row_list()
@@ -74,15 +76,30 @@ def fit(train_data, learning_rate_list, regulation_rate_list, epsilon=0.001, max
 
   trow_list = train_data.get_test_row_list()
   tcol_list = train_data.get_test_col_list()
+  vrow_list = train_data.get_validation_row_list()
+  vcol_list = train_data.get_validation_col_list()
   for idx in range(len(trow_list)):
     r = trow_list[idx]
     c = tcol_list[idx]
     rating = train_data.get_val(r, c, 'rating')
     err = rating - (overall_mean + b_u[r] + b_i[c] + np.dot(p[r], q[c].T))
     total_err += (err / len(trow_list)* err)
-  # rmse = math.sqrt(total_err)
-  rmse = total_err
-  print("initial", rmse)
+  rmse = math.sqrt(total_err)
+  mse = total_err
+  print("initial guess test mse", mse)
+  print("initial guess test rmse", rmse)
+  total_err = 0.0
+
+  for idx in range(len(row_list)):
+    r = row_list[idx]
+    c = col_list[idx]
+    rating = train_data.get_val(r, c, 'rating')
+    err = rating - (overall_mean + b_u[r] + b_i[c] + np.dot(p[r], q[c].T))
+    total_err += (err / len(row_list) * err)
+  rmse = math.sqrt(total_err)
+  mse = total_err
+  print("initial guess train mse", mse)
+  print("initial guesstrain rmse", rmse)
   total_err = 0.0
 
   while i < max_iter_num:
@@ -108,16 +125,39 @@ def fit(train_data, learning_rate_list, regulation_rate_list, epsilon=0.001, max
     pre_total_err = total_err
     total_err = 0.0
     i += 1
-
-  for idx in range(len(trow_list)):
-    r = trow_list[idx]
-    c = tcol_list[idx]
+    for idx in range(len(vrow_list)):
+      r = vrow_list[idx]
+      c = vcol_list[idx]
+      rating = train_data.get_val(r, c, 'rating')
+      err = rating - (overall_mean + b_u[r] + b_i[c] + np.dot(p[r], q[c].T))
+      total_err += (err / len(vrow_list) * err)
+    rmse = math.sqrt(total_err)
+    mse = total_err
+    print("latent factor validation mse", mse)
+    print("latent factor validation rmse", rmse)
+    total_err = 0.0
+    for idx in range(len(trow_list)):
+      r = trow_list[idx]
+      c = tcol_list[idx]
+      rating = train_data.get_val(r, c, 'rating')
+      err = rating - (overall_mean + b_u[r] + b_i[c] + np.dot(p[r], q[c].T))
+      total_err += (err / len(trow_list) * err)
+    rmse = math.sqrt(total_err)
+    mse = total_err
+    print("latent factor test mse", mse)
+    print("latent factor test rmse", rmse)
+    total_err = 0.0
+  total_err = 0.0
+  for idx in range(len(row_list)):
+    r = row_list[idx]
+    c = col_list[idx]
     rating = train_data.get_val(r, c, 'rating')
     err = rating - (overall_mean + b_u[r] + b_i[c] + np.dot(p[r], q[c].T))
-    total_err += (err / len(trow_list) * err)
-  # rmse = math.sqrt(total_err)
-  rmse = total_err
-  print(rmse)
+    total_err += (err / len(row_list) * err)
+  rmse = math.sqrt(total_err)
+  mse = total_err
+  print("latent factor train mse", mse)
+  print("latent factor train rmse", rmse)
   total_err = 0.0
   return overall_mean, b_u, b_i, p, q
 
@@ -149,10 +189,10 @@ def predict(data, mean, b_u, b_i, p, q, top_n=10):
   return prediction, prediction_col
 
 if __name__ == '__main__':
-  # data = sparse_data("Electronics_5.json")
-  data = sparse_data("test.json")
+  data = sparse_data("Electronics_5.json")
+  # data = sparse_data("test.json")
   print(len(data.get_train_col_list()))
-  mean, b_u, b_i, p, q = fit(data, [0.005,0.005,0.005,0.005], [0.02,0.02,0.02,0.02])
+  mean, b_u, b_i, p, q = fit(data, [0.005,0.005,0.005,0.005], [0.02,0.02,0.02,0.02], max_iter_num=30)
   HFT(data)
   #print(predict(data, mean, b_u, b_i, p, q))
   #print(data.get_row_size())

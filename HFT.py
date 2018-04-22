@@ -11,8 +11,8 @@ class HFT:
   item_bias = []
   rating_list = []
   kappa = 1.0
-  mu = 0.001
-  vlambda = 0.001
+  mu = 0.005
+  vlambda = 0.0
   gamma_user = None
   gamma_item = None
   data = None
@@ -83,6 +83,8 @@ class HFT:
     # Because of using the row based storage
     # directly count and sum is okay.
     row_counts = np.bincount(row_list)
+    # avoid divide by 0
+    row_counts[row_counts == 0] = 1
     row_sums = np.bincount(row_list, weights=self.rating_list)
     self.user_bias = row_sums / row_counts
     self.user_bias = np.add(self.user_bias, -self.overall_mean)
@@ -97,15 +99,18 @@ class HFT:
       else:
         col_sum.setdefault(col_idx, [self.rating_list[idx], 1])
     for i in range(self.n_item):
-      rec = col_sum[i]
-      self.item_bias[i] = float(rec[0]) / rec[1]
+      if i in col_sum:
+        rec = col_sum[i]
+        self.item_bias[i] = float(rec[0]) / rec[1]
+      else:
+        self.item_bias[i] = 0.0
     self.item_bias = np.add(self.item_bias, -self.overall_mean)
     t0 = time.time()
     self.sample_topic()
     print(time.time() - t0)
     self.normalize_word_weight()
     self.top_words()
-    self.fit(max_iter_num=30)
+    self.fit(max_iter_num=5)
 
   def top_words(self, top_n=10):
     top_idx = np.argsort(self.word_weight, axis=0)[::-1]
@@ -152,6 +157,19 @@ class HFT:
           self.topic_w_cnt[new_topic] += 1
           self.topic_w_cnt[old_topic] -= 1
           topic_list[i] = new_topic
+
+  def validation_error(self):
+    row_list = self.data.get_validation_row_list()
+    col_list = self.data.get_validation_col_list()
+    total_err = 0
+    for idx in range(len(row_list)):
+      r = row_list[idx]
+      c = col_list[idx]
+      rating = self.data.get_val(r, c, 'rating')
+      est = self.overall_mean + self.user_bias[r] + self.item_bias[c] + np.dot(self.gamma_user[r], self.gamma_item[c].T)
+      err = rating - est
+      total_err += (err / len(row_list) * err)
+    return total_err
 
   # overall_mean, kappa, bias_user, bias_item, gamma_user, gamma_item, word_weight
   def get_args(self, arglist):
@@ -223,9 +241,10 @@ class HFT:
   def fit(self, epsilon=0.01, max_sample_num=20, max_iter_num=20):
     i = 0
     total_err = 0.0
-    # row_list = self.data.get_train_row_list()
-    # col_list = self.data.get_train_col_list()
+    train_row_list = self.data.get_train_row_list()
+    train_col_list = self.data.get_train_col_list()
 
+    offset = 0.0
     row_list = self.data.get_test_row_list()
     col_list = self.data.get_test_col_list()
     for idx in range(len(row_list)):
@@ -233,10 +252,27 @@ class HFT:
       c = col_list[idx]
       rating = self.data.get_val(r, c, 'rating')
       err = rating - (self.overall_mean + self.user_bias[r] + self.item_bias[c] + np.dot(self.gamma_user[r], self.gamma_item[c].T))
+      offset_err = rating - (self.overall_mean + self.user_bias[r] + self.item_bias[c])
+      offset += (offset_err / len(row_list)* offset_err)
       total_err += (err / len(row_list)* err)
-    # rmse = math.sqrt(total_err)
-    rmse = total_err
-    print("initial", rmse)
+    rmse = math.sqrt(total_err)
+    mse = total_err
+    print("offset test mse", offset)
+    print("offset test rmse", math.sqrt(offset))
+    print("initial guess test mse", mse)
+    print("initial guess test rmse", rmse)
+    total_err = 0.0
+    for idx in range(len(train_row_list)):
+      r = train_row_list[idx]
+      c = train_col_list[idx]
+      rating = self.data.get_val(r, c, 'rating')
+      est = self.overall_mean + self.user_bias[r] + self.item_bias[c] + np.dot(self.gamma_user[r], self.gamma_item[c].T)
+      err = rating - est
+      total_err += (err / len(train_row_list) * err)
+    rmse = math.sqrt(total_err)
+    mse = total_err
+    print("initial guess train mse", mse)
+    print("initial guess train rmse", rmse)
     total_err = 0.0
     while i < max_sample_num:
       args = self.set_args(self.overall_mean, self.kappa, self.user_bias, self.item_bias, self.gamma_user, self.gamma_item, self.word_weight)
@@ -248,18 +284,33 @@ class HFT:
       print(val, d)
       self.sample_topic()
       self.normalize_word_weight()
-      # self.top_words()
+      self.top_words()
+      mse = self.validation_error()
+      print("HTF validation mse", mse)
+      print("HTF validation rmse", math.sqrt(mse))
       for idx in range(len(row_list)):
         r = row_list[idx]
         c = col_list[idx]
         rating = self.data.get_val(r, c, 'rating')
         est = self.overall_mean + self.user_bias[r] + self.item_bias[c] + np.dot(self.gamma_user[r], self.gamma_item[c].T)
         err = rating - est
-        #print(rating, est)
         total_err += (err / len(row_list) * err)
-      # rmse = math.sqrt(total_err)
-      rmse = total_err
-      print(rmse)
+      rmse = math.sqrt(total_err)
+      mse = total_err
+      print("HFT test mse", mse)
+      print("HFT test rmse", rmse)
+      total_err = 0.0
+      for idx in range(len(train_row_list)):
+        r = train_row_list[idx]
+        c = train_col_list[idx]
+        rating = self.data.get_val(r, c, 'rating')
+        est = self.overall_mean + self.user_bias[r] + self.item_bias[c] + np.dot(self.gamma_user[r], self.gamma_item[c].T)
+        err = rating - est
+        total_err += (err / len(train_row_list) * err)
+      rmse = math.sqrt(total_err)
+      mse = total_err
+      print("HFT train mse", mse)
+      print("HFT train rmse", rmse)
       total_err = 0.0
       i += 1
 
