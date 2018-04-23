@@ -19,7 +19,6 @@ from surprise.model_selection import train_test_split
 import sparse_data as sp
 from surprise.model_selection import PredefinedKFold
 import heapq
-import math
 
 def preprocess(filename, trainFile, testFile):
     raw_data = sp.sparse_data(filename)
@@ -74,6 +73,8 @@ def calculate_recall(recommendSet, trueSet):
     return count / len(recommendSet)
 
 def calculate_f_feature(precision, recall):
+    if (precision + recall) == 0:
+        return 0
     return 2 * precision * recall / (precision + recall)
 
 def isHit(recommendSet, trueSet):
@@ -125,6 +126,9 @@ if __name__ == '__main__':
     total_recalls = 0.0
     total_hit = 0.0
     total_nDCG = 0.0
+    total_ffeature = 0.0
+    result_file = "result.txt"
+    result_f = open(result_file,"w")
     for trainset, testset in pkf.split(data):
         testsSet = testset
         
@@ -162,17 +166,26 @@ if __name__ == '__main__':
                 top_n[user].add(items[1])
                 top_n_with_score.append(items)
             if user in userTrueTestSet:
-                total_precisions += calculate_precision(top_n[user], userTrueTestSet[user])
-                total_recalls += calculate_recall(top_n[user], userTrueTestSet[user])
-                total_hit += isHit(top_n[user], userTrueTestSet[user])
-                total_nDCG += calculate_NDCG(top_n[user], userTrueTestSet[user])
+                curPrecisions = calculate_precision(top_n[user], userTrueTestSet[user])
+                curRecalls = calculate_recall(top_n[user], userTrueTestSet[user])
+                ffeature = calculate_f_feature(curPrecisions, curRecalls)
+                curHit = isHit(top_n[user], userTrueTestSet[user])
+                cur_nDCG = calculate_NDCG(top_n[user], userTrueTestSet[user])
+                total_precisions += curPrecisions
+                total_recalls += curRecalls
+                total_hit += curHit
+                total_nDCG += cur_nDCG
+                total_ffeature += ffeature
+                result_f.write(user+"\t"+str(curPrecisions)+"\t"+str(curRecalls)+"\t"+ str(ffeature) + "\t" + str(curHit) + '\t' + str(cur_nDCG) + "\n")
             if i % 1000 == 0:
                 duration = (time.time() - cur_time) / 60
                 time_cost += duration
                 remaining_time = ((rowNum - i)  / 1000) * duration
                 cur_time = time.time()
-                print 'precisions', total_precisions, ' recalls', total_recalls, ' nDCG', total_nDCG
+                #print 'precisions', total_precisions, ' recalls', total_recalls, ' nDCG', total_nDCG
                 print 'i:', i, "/", rowNum, 'remaining time:', remaining_time, 'min'
     print 'precicions', total_precisions, ' recalls', total_recalls, ' hit', total_hit, 'nDCG:', total_nDCG
     rowNum = raw_data.get_row_size()
     print 'avg_precisions:', total_precisions / rowNum, 'avg_recalls:', total_recalls / rowNum, 'avg_hit:', total_hit / rowNum, 'avg_nDCG:', total_nDCG/rowNum
+    result_f.write("avg:\t"+str(total_precisions / rowNum)+"\t"+str(total_recalls / rowNum)+"\t" + str(total_ffeature / rowNum) +"\t"+str(total_hit / rowNum) + '\t' + str(total_nDCG/rowNum) + "\n")
+    result_f.close()
