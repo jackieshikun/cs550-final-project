@@ -76,6 +76,28 @@ def calculate_recall(recommendSet, trueSet):
 def calculate_f_feature(precision, recall):
     return 2 * precision * recall / (precision + recall)
 
+def isHit(recommendSet, trueSet):
+    for item in trueSet:
+        if item in recommendSet:
+            return 1
+    return 0
+def calculate_NDCG(recommendList, trueSet):
+    DCG_p = 0.0
+    IDCG_p = 0.0
+    i = 1
+    j = 1
+    for item in recommendList:
+        if item in trueSet:
+            DCG_p += (1.0) / (np.log2(i+1))
+            IDCG_p += (1.0) / (np.log2(j+1))
+            j += 1
+        i += 1
+    if IDCG_p == 0:
+        return 0
+    #print 'DCG_p', DCG_p, 'IDCG_p', IDCG_p
+    nDCG_p = DCG_p / IDCG_p
+    return nDCG_p
+
 
 if __name__ == '__main__':
     filename = "test.json"
@@ -101,6 +123,8 @@ if __name__ == '__main__':
     testsSet = None
     total_precisions = 0.0
     total_recalls = 0.0
+    total_hit = 0.0
+    total_nDCG = 0.0
     for trainset, testset in pkf.split(data):
         testsSet = testset
         
@@ -118,7 +142,6 @@ if __name__ == '__main__':
         cur_time = time.time()
         time_cost = 0
         
-        #print rowNum, colNum
         for i in range(rowNum):
             user = raw_data.get_userID(i)
             predictions[user] = set()
@@ -134,19 +157,22 @@ if __name__ == '__main__':
                     heapq.heappop(pq)
                 heapq.heappush(pq, (predict, item))
             top_n[user] = set()
+            top_n_with_score = []
             for items in pq:
                 top_n[user].add(items[1])
+                top_n_with_score.append(items)
             if user in userTrueTestSet:
                 total_precisions += calculate_precision(top_n[user], userTrueTestSet[user])
                 total_recalls += calculate_recall(top_n[user], userTrueTestSet[user])
+                total_hit += isHit(top_n[user], userTrueTestSet[user])
+                total_nDCG += calculate_NDCG(top_n[user], userTrueTestSet[user])
             if i % 1000 == 0:
                 duration = (time.time() - cur_time) / 60
                 time_cost += duration
                 remaining_time = ((rowNum - i)  / 1000) * duration
                 cur_time = time.time()
-                print 'precisions', total_precisions, ' recalls', total_recalls
+                print 'precisions', total_precisions, ' recalls', total_recalls, ' nDCG', total_nDCG
                 print 'i:', i, "/", rowNum, 'remaining time:', remaining_time, 'min'
-    print 'precicions', total_precisions, ' recalls', total_recalls
-    precisions, avgPrecision, recalls, avgRecalls = calculate_percision_and_recall(top_n, testsSet)
-    print len(precisions)
-    print 'avgPrecision', avgPrecision, 'avgRecall', avgRecalls  
+    print 'precicions', total_precisions, ' recalls', total_recalls, ' hit', total_hit, 'nDCG:', total_nDCG
+    rowNum = raw_data.get_row_size()
+    print 'avg_precisions:', total_precisions / rowNum, 'avg_recalls:', total_recalls / rowNum, 'avg_hit:', total_hit / rowNum, 'avg_nDCG:', total_nDCG/rowNum
