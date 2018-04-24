@@ -1,6 +1,5 @@
 import json
 from pprint import pprint
-import pandas as pd
 import numpy as np
 import time
 
@@ -14,7 +13,6 @@ from surprise.model_selection import KFold
 from surprise import KNNBasic
 from surprise import KNNBaseline
 from surprise import SVDpp
-from collections import defaultdict
 from surprise.model_selection import train_test_split
 import sparse_data as sp
 from surprise.model_selection import PredefinedKFold
@@ -25,7 +23,7 @@ def preprocess(sparse_data, trainFile, testFile):
     train_output = trainFile
     userPurchasedSet = {}
     train_f = open(train_output,"w")
-
+    
     train_row_ind = raw_data.get_train_row_list()
     train_col_ind = raw_data.get_train_col_list()
     for i in range(len(train_row_ind)):
@@ -39,7 +37,7 @@ def preprocess(sparse_data, trainFile, testFile):
         value = raw_data.get_val(row, col, 'rating')
         train_f.write(user+"\t"+item+"\t"+str(value)+"\n")
     train_f.close()
-
+    
     userTrueTestSet = {}
     test_output = testFile
     test_f = open(test_output, "w")
@@ -58,15 +56,19 @@ def preprocess(sparse_data, trainFile, testFile):
     test_f.close()
     return raw_data, userPurchasedSet, userTrueTestSet
 
-def calculate_precision(recommendSet, trueSet):
+def calculate_recall(recommendSet, trueSet):
     count = 0.0
+    if len(trueSet) == 0:
+        return 0
     for item in trueSet:
         if item in recommendSet:
             count += 1
     return count / len(trueSet)
 
-def calculate_recall(recommendSet, trueSet):
+def calculate_precision(recommendSet, trueSet):
     count = 0.0
+    if len(recommendSet) == 0:
+        return 0
     for item in recommendSet:
         if item in trueSet:
             count += 1
@@ -123,21 +125,21 @@ def run_latent_factor(sparse_data):
     result_f = open(result_file,"w")
     for trainset, testset in pkf.split(data):
         testsSet = testset
-
-        algo = SVD(n_factors = 5)
+        
+        algo = SVD(n_factors = 100)
         #algo = KNNBaseline(bsl_options=bsl_options, sim_options=sim_options)
         algo.fit(trainset)
         pre = algo.test(testset)
         accuracy.rmse(pre)
         accuracy.mae(pre)
         #calculate_rmse(predictions)
-
+        
         ### test
         rowNum = raw_data.get_row_size()
         colNum = raw_data.get_col_size()
         cur_time = time.time()
         time_cost = 0
-
+        
         for i in range(rowNum):
             user = raw_data.get_userID(i)
             predictions[user] = set()
@@ -153,10 +155,8 @@ def run_latent_factor(sparse_data):
                     heapq.heappop(pq)
                 heapq.heappush(pq, (predict, item))
             top_n[user] = set()
-            top_n_with_score = []
             for items in pq:
                 top_n[user].add(items[1])
-                top_n_with_score.append(items)
             if user in userTrueTestSet:
                 curPrecisions = calculate_precision(top_n[user], userTrueTestSet[user])
                 curRecalls = calculate_recall(top_n[user], userTrueTestSet[user])
@@ -215,7 +215,7 @@ def run_knn_baseline(sparse_data):
     result_f = open(result_file,"w")
     for trainset, testset in pkf.split(data):
         testsSet = testset
-
+        
         #algo = SVD(n_factors = 5)
         algo = KNNBaseline(bsl_options=bsl_options, sim_options=sim_options)
         algo.fit(trainset)
@@ -223,13 +223,13 @@ def run_knn_baseline(sparse_data):
         accuracy.rmse(pre)
         accuracy.mae(pre)
         #calculate_rmse(predictions)
-
+        
         ### test
         rowNum = raw_data.get_row_size()
         colNum = raw_data.get_col_size()
         cur_time = time.time()
         time_cost = 0
-
+        
         for i in range(rowNum):
             user = raw_data.get_userID(i)
             predictions[user] = set()
@@ -245,10 +245,8 @@ def run_knn_baseline(sparse_data):
                     heapq.heappop(pq)
                 heapq.heappush(pq, (predict, item))
             top_n[user] = set()
-            top_n_with_score = []
             for items in pq:
                 top_n[user].add(items[1])
-                top_n_with_score.append(items)
             if user in userTrueTestSet:
                 curPrecisions = calculate_precision(top_n[user], userTrueTestSet[user])
                 curRecalls = calculate_recall(top_n[user], userTrueTestSet[user])
@@ -277,6 +275,6 @@ def run_knn_baseline(sparse_data):
 
 
 if __name__ == '__main__':
-    sparse_data = sp.sparse_data('newTest.json')
+    sparse_data = sp.sparse_data('test.json')
     run_latent_factor(sparse_data)
-    run_knn_baseline(sparse_data)
+    #run_knn_baseline(sparse_data)
