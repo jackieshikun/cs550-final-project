@@ -20,8 +20,8 @@ import sparse_data as sp
 from surprise.model_selection import PredefinedKFold
 import heapq
 
-def preprocess(filename, trainFile, testFile):
-    raw_data = sp.sparse_data(filename)
+def preprocess(sparse_data, trainFile, testFile):
+    raw_data = sparse_data
     train_output = trainFile
     userPurchasedSet = {}
     train_f = open(train_output,"w")
@@ -100,12 +100,12 @@ def calculate_NDCG(recommendList, trueSet):
     return nDCG_p
 
 
-if __name__ == '__main__':
-    filename = "test.json"
+def run_latent_factor(sparse_data):
+    #filename = "test.json"
     trainFile = "train.txt"
     testFile = "test.txt"
 
-    raw_data, userPurchasedSet, userTrueTestSet = preprocess(filename, trainFile, testFile)
+    raw_data, userPurchasedSet, userTrueTestSet = preprocess(sparse_data, trainFile, testFile)
     folds_files = [(trainFile, testFile)]
     reader = Reader(line_format='user item rating', sep='\t')
     data = Dataset.load_from_folds(folds_files, reader=reader)
@@ -137,7 +137,7 @@ if __name__ == '__main__':
         algo.fit(trainset)
         pre = algo.test(testset)
         accuracy.rmse(pre)
-        
+        accuracy.mae(pre)
         #calculate_rmse(predictions)
         
         ### test
@@ -177,7 +177,7 @@ if __name__ == '__main__':
                 total_nDCG += cur_nDCG
                 total_ffeature += ffeature
                 result_f.write(user+"\t"+str(curPrecisions)+"\t"+str(curRecalls)+"\t"+ str(ffeature) + "\t" + str(curHit) + '\t' + str(cur_nDCG) + "\n")
-            if i % 1000 == 0:
+            if i != 0 and i % 1000 == 0:
                 duration = (time.time() - cur_time) / 60
                 time_cost += duration
                 remaining_time = ((rowNum - i)  / 1000) * duration
@@ -186,6 +186,9 @@ if __name__ == '__main__':
                 print 'i:', i, "/", rowNum, 'remaining time:', remaining_time, 'min'
     print 'precicions', total_precisions, ' recalls', total_recalls, ' hit', total_hit, 'nDCG:', total_nDCG
     rowNum = raw_data.get_row_size()
-    print 'avg_precisions:', total_precisions / rowNum, 'avg_recalls:', total_recalls / rowNum, 'avg_hit:', total_hit / rowNum, 'avg_nDCG:', total_nDCG/rowNum
+    print 'avg_precisions:', total_precisions / rowNum, 'avg_recalls:', total_recalls / rowNum, 'avg_ffeature', str(total_ffeature / rowNum) , 'avg_hit:', total_hit / rowNum, 'avg_nDCG:', total_nDCG/rowNum
     result_f.write("avg:\t"+str(total_precisions / rowNum)+"\t"+str(total_recalls / rowNum)+"\t" + str(total_ffeature / rowNum) +"\t"+str(total_hit / rowNum) + '\t' + str(total_nDCG/rowNum) + "\n")
     result_f.close()
+if __name__ == '__main__':
+    sparse_data = sp.sparse_data('newTest.json')
+    run_latent_factor(sparse_data) 
