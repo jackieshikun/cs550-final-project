@@ -25,7 +25,7 @@ def preprocess(sparse_data, trainFile, testFile):
     train_output = trainFile
     userPurchasedSet = {}
     train_f = open(train_output,"w")
-    
+
     train_row_ind = raw_data.get_train_row_list()
     train_col_ind = raw_data.get_train_col_list()
     for i in range(len(train_row_ind)):
@@ -39,7 +39,7 @@ def preprocess(sparse_data, trainFile, testFile):
         value = raw_data.get_val(row, col, 'rating')
         train_f.write(user+"\t"+item+"\t"+str(value)+"\n")
     train_f.close()
-    
+
     userTrueTestSet = {}
     test_output = testFile
     test_f = open(test_output, "w")
@@ -131,7 +131,7 @@ def run_latent_factor(sparse_data):
     result_f = open(result_file,"w")
     for trainset, testset in pkf.split(data):
         testsSet = testset
-        
+
         algo = SVD(n_factors = 5)
         #algo = KNNBaseline(bsl_options=bsl_options, sim_options=sim_options)
         algo.fit(trainset)
@@ -139,13 +139,13 @@ def run_latent_factor(sparse_data):
         accuracy.rmse(pre)
         accuracy.mae(pre)
         #calculate_rmse(predictions)
-        
+
         ### test
         rowNum = raw_data.get_row_size()
         colNum = raw_data.get_col_size()
         cur_time = time.time()
         time_cost = 0
-        
+
         for i in range(rowNum):
             user = raw_data.get_userID(i)
             predictions[user] = set()
@@ -191,4 +191,4 @@ def run_latent_factor(sparse_data):
     result_f.close()
 if __name__ == '__main__':
     sparse_data = sp.sparse_data('newTest.json')
-    run_latent_factor(sparse_data) 
+    run_latent_factor(sparse_data)
