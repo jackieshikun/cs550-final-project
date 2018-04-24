@@ -102,23 +102,15 @@ def calculate_NDCG(recommendList, trueSet):
 
 def run_latent_factor(sparse_data):
     #filename = "test.json"
-    trainFile = "train.txt"
-    testFile = "test.txt"
+    fileprefix = "lf_"
+    trainFile = fileprefix + "train.txt"
+    testFile = fileprefix + "test.txt"
 
     raw_data, userPurchasedSet, userTrueTestSet = preprocess(sparse_data, trainFile, testFile)
     folds_files = [(trainFile, testFile)]
     reader = Reader(line_format='user item rating', sep='\t')
     data = Dataset.load_from_folds(folds_files, reader=reader)
     pkf = PredefinedKFold()
-    bsl_options = {'method': 'sgd',
-               'n_epochs': 20,
-               'learning_rate': 0.005,
-               }
-    ### sim name: cosine    msd       pearson     pearson_baseline
-    ### user_based : True ---- similarity will be computed based on users
-    ###            : False ---- similarity will be computed based on items.
-    sim_options = {'name': 'msd',
-              'user_based':False}
     predictions = {}
     top_n = {}
     testsSet = None
@@ -127,7 +119,7 @@ def run_latent_factor(sparse_data):
     total_hit = 0.0
     total_nDCG = 0.0
     total_ffeature = 0.0
-    result_file = "result.txt"
+    result_file = fileprefix + "result.txt"
     result_f = open(result_file,"w")
     for trainset, testset in pkf.split(data):
         testsSet = testset
@@ -189,6 +181,102 @@ def run_latent_factor(sparse_data):
     print 'avg_precisions:', total_precisions / rowNum, 'avg_recalls:', total_recalls / rowNum, 'avg_ffeature', str(total_ffeature / rowNum) , 'avg_hit:', total_hit / rowNum, 'avg_nDCG:', total_nDCG/rowNum
     result_f.write("avg:\t"+str(total_precisions / rowNum)+"\t"+str(total_recalls / rowNum)+"\t" + str(total_ffeature / rowNum) +"\t"+str(total_hit / rowNum) + '\t' + str(total_nDCG/rowNum) + "\n")
     result_f.close()
+
+
+def run_knn_baseline(sparse_data):
+    #filename = "test.json"
+    prefix = "knn_baseline_"
+    trainFile = prefix + "train.txt"
+    testFile = prefix + "test.txt"
+
+    raw_data, userPurchasedSet, userTrueTestSet = preprocess(sparse_data, trainFile, testFile)
+    folds_files = [(trainFile, testFile)]
+    reader = Reader(line_format='user item rating', sep='\t')
+    data = Dataset.load_from_folds(folds_files, reader=reader)
+    pkf = PredefinedKFold()
+    bsl_options = {'method': 'sgd',
+               'n_epochs': 20,
+               'learning_rate': 0.005,
+               }
+    ### sim name: cosine    msd       pearson     pearson_baseline
+    ### user_based : True ---- similarity will be computed based on users
+    ###            : False ---- similarity will be computed based on items.
+    sim_options = {'name': 'cosine',
+              'user_based':False}
+    predictions = {}
+    top_n = {}
+    testsSet = None
+    total_precisions = 0.0
+    total_recalls = 0.0
+    total_hit = 0.0
+    total_nDCG = 0.0
+    total_ffeature = 0.0
+    result_file = prefix + "result.txt"
+    result_f = open(result_file,"w")
+    for trainset, testset in pkf.split(data):
+        testsSet = testset
+        
+        #algo = SVD(n_factors = 5)
+        algo = KNNBaseline(bsl_options=bsl_options, sim_options=sim_options)
+        algo.fit(trainset)
+        pre = algo.test(testset)
+        accuracy.rmse(pre)
+        accuracy.mae(pre)
+        #calculate_rmse(predictions)
+        
+        ### test
+        rowNum = raw_data.get_row_size()
+        colNum = raw_data.get_col_size()
+        cur_time = time.time()
+        time_cost = 0
+        
+        for i in range(rowNum):
+            user = raw_data.get_userID(i)
+            predictions[user] = set()
+            pq = []
+            heapq.heapify(pq)
+            for j in range(colNum):
+                item = raw_data.get_itemID(j)
+                if user not in userPurchasedSet or item in userPurchasedSet[user]:
+                    continue
+                value = raw_data.get_val(user, item,'rating')
+                predict = algo.predict(user, item, r_ui = 0, verbose=False)[3]
+                if len(pq) >= 10:
+                    heapq.heappop(pq)
+                heapq.heappush(pq, (predict, item))
+            top_n[user] = set()
+            top_n_with_score = []
+            for items in pq:
+                top_n[user].add(items[1])
+                top_n_with_score.append(items)
+            if user in userTrueTestSet:
+                curPrecisions = calculate_precision(top_n[user], userTrueTestSet[user])
+                curRecalls = calculate_recall(top_n[user], userTrueTestSet[user])
+                ffeature = calculate_f_feature(curPrecisions, curRecalls)
+                curHit = isHit(top_n[user], userTrueTestSet[user])
+                cur_nDCG = calculate_NDCG(top_n[user], userTrueTestSet[user])
+                total_precisions += curPrecisions
+                total_recalls += curRecalls
+                total_hit += curHit
+                total_nDCG += cur_nDCG
+                total_ffeature += ffeature
+                result_f.write(user+"\t"+str(curPrecisions)+"\t"+str(curRecalls)+"\t"+ str(ffeature) + "\t" + str(curHit) + '\t' + str(cur_nDCG) + "\n")
+            if i != 0 and i % 1000 == 0:
+                duration = (time.time() - cur_time) / 60
+                time_cost += duration
+                remaining_time = ((rowNum - i)  / 1000) * duration
+                cur_time = time.time()
+                #print 'precisions', total_precisions, ' recalls', total_recalls, ' nDCG', total_nDCG
+                print 'i:', i, "/", rowNum, 'remaining time:', remaining_time, 'min'
+    print 'precicions', total_precisions, ' recalls', total_recalls, ' hit', total_hit, 'nDCG:', total_nDCG
+    rowNum = raw_data.get_row_size()
+    print 'avg_precisions:', total_precisions / rowNum, 'avg_recalls:', total_recalls / rowNum, 'avg_ffeature', str(total_ffeature / rowNum) , 'avg_hit:', total_hit / rowNum, 'avg_nDCG:', total_nDCG/rowNum
+    result_f.write("avg:\t"+str(total_precisions / rowNum)+"\t"+str(total_recalls / rowNum)+"\t" + str(total_ffeature / rowNum) +"\t"+str(total_hit / rowNum) + '\t' + str(total_nDCG/rowNum) + "\n")
+    result_f.close()
+
+
+
 if __name__ == '__main__':
     sparse_data = sp.sparse_data('newTest.json')
-    run_latent_factor(sparse_data) 
+    run_latent_factor(sparse_data)
+    run_knn_baseline(sparse_data)
