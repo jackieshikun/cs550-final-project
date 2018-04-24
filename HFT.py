@@ -3,7 +3,10 @@ from scipy.optimize import fmin_l_bfgs_b
 import math
 import numpy as np
 import time
+import heapq
+import operator
 from copy import deepcopy
+from surprise_sample import calculate_f_feature, calculate_precision, calculate_recall, calculate_NDCG, isHit
 
 class HFT:
   overall_mean = 0.0
@@ -11,7 +14,7 @@ class HFT:
   item_bias = []
   rating_list = []
   kappa = 1.0
-  mu = 0.005
+  mu = 0.01
   vlambda = 0.0
   gamma_user = None
   gamma_item = None
@@ -21,7 +24,7 @@ class HFT:
   n_item = 0
   n_user = 0
   K = 5
-  exp_threshold = 705.0
+  exp_threshold = 709.0
 
   # (row,col), [topic number]
   word_topics = {}
@@ -110,7 +113,7 @@ class HFT:
     print(time.time() - t0)
     self.normalize_word_weight()
     self.top_words()
-    self.fit(max_iter_num=5)
+    self.fit(max_sample_num=50, max_iter_num=5)
 
   def top_words(self, top_n=10):
     top_idx = np.argsort(self.word_weight, axis=0)[::-1]
@@ -137,7 +140,8 @@ class HFT:
       for i in range(rv_len):
         word = rv[i]
         base = np.add(np.multiply(self.kappa, self.gamma_item[col]), np.add(self.back_weight[word], self.word_weight[word]))
-        base[base>self.exp_threshold] = self.exp_threshold
+        base = base - np.amax(base)
+        # base[base>self.exp_threshold] = self.exp_threshold
         topic_score = np.exp(base)
         topic_sum = np.sum(topic_score)
         topic_score = topic_score / topic_sum
@@ -158,18 +162,18 @@ class HFT:
           self.topic_w_cnt[old_topic] -= 1
           topic_list[i] = new_topic
 
-  def validation_error(self):
-    row_list = self.data.get_validation_row_list()
-    col_list = self.data.get_validation_col_list()
-    total_err = 0
+  def calc_error(self, row_list, col_list):
+    mse = 0.0
+    mae = 0.0
     for idx in range(len(row_list)):
       r = row_list[idx]
       c = col_list[idx]
       rating = self.data.get_val(r, c, 'rating')
       est = self.overall_mean + self.user_bias[r] + self.item_bias[c] + np.dot(self.gamma_user[r], self.gamma_item[c].T)
       err = rating - est
-      total_err += (err / len(row_list) * err)
-    return total_err
+      mse += (err / len(row_list) * err)
+      mae += (abs(err) / len(row_list))
+    return [mae, mse]
 
   # overall_mean, kappa, bias_user, bias_item, gamma_user, gamma_item, word_weight
   def get_args(self, arglist):
@@ -240,79 +244,95 @@ class HFT:
 
   def fit(self, epsilon=0.01, max_sample_num=20, max_iter_num=20):
     i = 0
-    total_err = 0.0
     train_row_list = self.data.get_train_row_list()
     train_col_list = self.data.get_train_col_list()
+    v_row_list = self.data.get_validation_row_list()
+    v_col_list = self.data.get_validation_col_list()
+    test_row_list = self.data.get_test_row_list()
+    test_col_list = self.data.get_test_col_list()
 
-    offset = 0.0
-    row_list = self.data.get_test_row_list()
-    col_list = self.data.get_test_col_list()
-    for idx in range(len(row_list)):
-      r = row_list[idx]
-      c = col_list[idx]
+    offset_mse = 0.0
+    offset_mae = 0.0
+    mse = 0.0
+    mae = 0.0
+    for idx in range(len(test_row_list)):
+      r = test_row_list[idx]
+      c = test_col_list[idx]
       rating = self.data.get_val(r, c, 'rating')
       err = rating - (self.overall_mean + self.user_bias[r] + self.item_bias[c] + np.dot(self.gamma_user[r], self.gamma_item[c].T))
       offset_err = rating - (self.overall_mean + self.user_bias[r] + self.item_bias[c])
-      offset += (offset_err / len(row_list)* offset_err)
-      total_err += (err / len(row_list)* err)
-    rmse = math.sqrt(total_err)
-    mse = total_err
-    print("offset test mse", offset)
-    print("offset test rmse", math.sqrt(offset))
-    print("initial guess test mse", mse)
-    print("initial guess test rmse", rmse)
-    total_err = 0.0
-    for idx in range(len(train_row_list)):
-      r = train_row_list[idx]
-      c = train_col_list[idx]
-      rating = self.data.get_val(r, c, 'rating')
-      est = self.overall_mean + self.user_bias[r] + self.item_bias[c] + np.dot(self.gamma_user[r], self.gamma_item[c].T)
-      err = rating - est
-      total_err += (err / len(train_row_list) * err)
-    rmse = math.sqrt(total_err)
-    mse = total_err
-    print("initial guess train mse", mse)
-    print("initial guess train rmse", rmse)
-    total_err = 0.0
+      offset_mse += (offset_err / len(test_row_list)* offset_err)
+      offset_mae += (abs(offset_err) / len(test_row_list))
+      mse += (err / len(test_row_list) * err)
+      mae += (abs(err) / len(test_row_list))
+    print("offset test mae", offset_mae)
+    print("offset test rmse", math.sqrt(offset_mse))
+    print("initial guess test mae", mae)
+    print("initial guess test rmse", math.sqrt(mse))
+    mae, mse = self.calc_error(train_row_list, train_col_list)
+    print("initial guess train mae", mae)
+    print("initial guess train rmse", math.sqrt(mse))
+    self.predict()
     while i < max_sample_num:
       args = self.set_args(self.overall_mean, self.kappa, self.user_bias, self.item_bias, self.gamma_user, self.gamma_item, self.word_weight)
       parameters = (self, None)
       t = time.time()
-      res, val, d = fmin_l_bfgs_b(evaluation, np.array(args), fprime=derivation, args=parameters, maxiter=max_iter_num)
+      res, val, d = fmin_l_bfgs_b(evaluation, np.array(args), fprime=derivation, args=parameters, maxiter=max_iter_num - 1)
       self.set_args_back(res)
       print(time.time() - t)
       print(val, d)
       self.sample_topic()
       self.normalize_word_weight()
       self.top_words()
-      mse = self.validation_error()
-      print("HTF validation mse", mse)
+      self.predict()
+      mae, mse = self.calc_error(v_row_list, v_col_list)
+      print("HTF validation mae", mae)
       print("HTF validation rmse", math.sqrt(mse))
-      for idx in range(len(row_list)):
-        r = row_list[idx]
-        c = col_list[idx]
-        rating = self.data.get_val(r, c, 'rating')
-        est = self.overall_mean + self.user_bias[r] + self.item_bias[c] + np.dot(self.gamma_user[r], self.gamma_item[c].T)
-        err = rating - est
-        total_err += (err / len(row_list) * err)
-      rmse = math.sqrt(total_err)
-      mse = total_err
-      print("HFT test mse", mse)
-      print("HFT test rmse", rmse)
-      total_err = 0.0
-      for idx in range(len(train_row_list)):
-        r = train_row_list[idx]
-        c = train_col_list[idx]
-        rating = self.data.get_val(r, c, 'rating')
-        est = self.overall_mean + self.user_bias[r] + self.item_bias[c] + np.dot(self.gamma_user[r], self.gamma_item[c].T)
-        err = rating - est
-        total_err += (err / len(train_row_list) * err)
-      rmse = math.sqrt(total_err)
-      mse = total_err
-      print("HFT train mse", mse)
-      print("HFT train rmse", rmse)
-      total_err = 0.0
+      mae, mse = self.calc_error(test_row_list, test_col_list)
+      print("HFT test mae", mae)
+      print("HFT test rmse", math.sqrt(mse))
+      mae, mse = self.calc_error(train_row_list, train_col_list)
+      print("HFT train mae", mae)
+      print("HFT train rmse", math.sqrt(mse))
       i += 1
+
+  def predict(self, top_n=10):
+    precision = 0.0
+    recall = 0.0
+    f_measure = 0.0
+    ndcg = 0.0
+    hit = 0.0
+    for i in range(self.n_user):
+      train_col = self.data.slice_train_row(i)
+      validation_col = self.data.slice_validation_row(i)
+      test_col = set(self.data.slice_test_row(i))
+      pred = []
+      b_u_i = self.user_bias[i]
+      p_i = self.gamma_user[i]
+      q = self.gamma_item.T
+      idx_out_columns = train_col + validation_col
+      idx_in_columns = [i for i in xrange(self.n_item) if i not in idx_out_columns]
+      filtered_q = q[:,idx_in_columns]
+      filtered_item_bias = self.item_bias[idx_in_columns]
+      pred = self.overall_mean + b_u_i + filtered_item_bias + np.dot(p_i, filtered_q).T
+      top_idx = zip(*heapq.nlargest(top_n, enumerate(pred), key=operator.itemgetter(1)))[0]
+      pred_sorted = []
+      pred_col_sorted = []
+      for idx in top_idx:
+        pred_sorted.append(pred[idx])
+        pred_col_sorted.append(idx_in_columns[idx])
+      cur_precision = calculate_precision(set(pred_col_sorted), test_col)
+      precision += cur_precision
+      cur_recall = calculate_recall(set(pred_col_sorted), test_col)
+      recall += cur_recall
+      f_measure += calculate_f_feature(cur_precision, cur_recall)
+      ndcg += calculate_NDCG(set(pred_col_sorted), test_col)
+      hit += isHit(set(pred_col_sorted), test_col)
+    print("precision", precision/self.n_user)
+    print("f_measure", f_measure/self.n_user)
+    print("recall", recall/self.n_user)
+    print("NDCG", ndcg/self.n_user)
+    print("HIT", hit/self.n_user)
 
 # we don't need to update the arguments only calculate the derivation
 def evaluation(args, *parameters):
@@ -342,12 +362,12 @@ def evaluation(args, *parameters):
   # compute theta
   # incase overflow, multiply mu at each stage
   gk = np.dot(gamma_item, kappa)
-  gk[gk > obj.exp_threshold] = obj.exp_threshold
+  # gk[gk > obj.exp_threshold] = obj.exp_threshold
   lz = np.log(np.sum(np.exp(gk), axis=1))
   result -= np.dot(mu, np.sum(np.multiply(item_topic_cnt, np.add(np.dot(kappa, gamma_item).T, -lz).T)))
   # compute phi
   sum_weight = np.add(back_weight, word_weight.T)
-  sum_weight[sum_weight > obj.exp_threshold] = obj.exp_threshold
+  # sum_weight[sum_weight > obj.exp_threshold] = obj.exp_threshold
   lw = np.log(np.sum(np.exp(sum_weight), axis=1))
   result -= np.dot(mu, np.sum(np.multiply(word_topic_cnt, np.add(sum_weight.T, -lw))))
   return result
@@ -387,7 +407,8 @@ def derivation(args, *parameters):
     dgamma_user[r] += np.add(-np.dot(gi, err), np.dot(vlambda, gu))
     dgamma_item[c] += np.add(-np.dot(gu, err), np.dot(vlambda, gi))
   gk = np.dot(gamma_item, kappa)
-  gk[gk > obj.exp_threshold] = obj.exp_threshold
+  gk = gk - np.amax(gk)
+  # gk[gk > obj.exp_threshold] = obj.exp_threshold
   expz = np.exp(gk)
   sz = np.sum(expz, axis=1)
   # n_item * K
@@ -397,7 +418,8 @@ def derivation(args, *parameters):
   dkappa = np.sum(np.multiply(gamma_item, tmp))
 
   sum_weight = np.add(back_weight, word_weight.T)
-  sum_weight[sum_weight > obj.exp_threshold] = obj.exp_threshold
+  sum_weight = sum_weight - np.amax(sum_weight)
+  # sum_weight[sum_weight > obj.exp_threshold] = obj.exp_threshold
   sum_weight_exp = np.exp(sum_weight)
   sw = np.sum(sum_weight_exp, axis=1)
   dword_weight = np.dot(-mu, np.add(word_topic_cnt, -np.multiply(topic_w_cnt, np.divide(sum_weight_exp.T, sw))))

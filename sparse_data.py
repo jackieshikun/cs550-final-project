@@ -76,7 +76,7 @@ class sparse_data:
     row_ind = row_ind[sorted_idx]
     col_ind = col_ind[sorted_idx]
     row_train_ind, col_train_ind = self.__separate_train_test(row_ind, col_ind)
-    self.__separate_train_validation(row_train_ind, col_train_ind)
+    self.__separate_train_validation(row_train_ind, col_train_ind, prob=0.0)
 
   # default hold 10% of total train set as validation data.
   def __separate_train_validation(self, row_idx, col_idx, prob=0.1):
@@ -209,6 +209,15 @@ class sparse_data:
     while i < len(self.__row_test_ind) and self.__row_test_ind[i] == rowId:
       i += 1
     return self.__col_test_ind[start: i]
+
+  def slice_validation_row(self, rowId):
+    start = self.__bisearch_left(self.__row_validation_ind, rowId)
+    if start == -1:
+      return []
+    i = start
+    while i < len(self.__row_validation_ind) and self.__row_validation_ind[i] == rowId:
+      i += 1
+    return self.__col_validation_ind[start: i]
 
   # return col_idx of searched row
   def slice_train_row(self, rowId):
