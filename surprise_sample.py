@@ -123,7 +123,7 @@ def run_latent_factor(sparse_data):
     result_f = open(result_file,"w")
     for trainset, testset in pkf.split(data):
         testsSet = testset
-        
+
         algo = SVD(n_factors = 5)
         #algo = KNNBaseline(bsl_options=bsl_options, sim_options=sim_options)
         algo.fit(trainset)
@@ -131,13 +131,13 @@ def run_latent_factor(sparse_data):
         accuracy.rmse(pre)
         accuracy.mae(pre)
         #calculate_rmse(predictions)
-        
+
         ### test
         rowNum = raw_data.get_row_size()
         colNum = raw_data.get_col_size()
         cur_time = time.time()
         time_cost = 0
-        
+
         for i in range(rowNum):
             user = raw_data.get_userID(i)
             predictions[user] = set()
@@ -215,15 +215,9 @@ def run_knn_baseline(sparse_data):
     result_f = open(result_file,"w")
     for trainset, testset in pkf.split(data):
         testsSet = testset
-<<<<<<< HEAD
 
-        algo = SVD(n_factors = 5)
-        #algo = KNNBaseline(bsl_options=bsl_options, sim_options=sim_options)
-=======
-        
         #algo = SVD(n_factors = 5)
         algo = KNNBaseline(bsl_options=bsl_options, sim_options=sim_options)
->>>>>>> 0c23eba3f2e18ae3bfd8c821937b840e2226fc04
         algo.fit(trainset)
         pre = algo.test(testset)
         accuracy.rmse(pre)
@@ -285,7 +279,4 @@ def run_knn_baseline(sparse_data):
 if __name__ == '__main__':
     sparse_data = sp.sparse_data('newTest.json')
     run_latent_factor(sparse_data)
-<<<<<<< HEAD
-=======
     run_knn_baseline(sparse_data)
->>>>>>> 0c23eba3f2e18ae3bfd8c821937b840e2226fc04

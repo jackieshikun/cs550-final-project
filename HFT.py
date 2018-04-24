@@ -113,7 +113,7 @@ class HFT:
     print(time.time() - t0)
     self.normalize_word_weight()
     self.top_words()
-    self.fit(max_sample_num=50, max_iter_num=5)
+    self.fit(max_sample_num=20, max_iter_num=5)
 
   def top_words(self, top_n=10):
     top_idx = np.argsort(self.word_weight, axis=0)[::-1]
