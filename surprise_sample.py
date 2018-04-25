@@ -102,7 +102,7 @@ def calculate_NDCG(recommendList, trueSet):
     return nDCG_p
 
 
-def run_latent_factor(sparse_data):
+def run_latent_factor(sparse_data, lr =.005, reg =.02):
     #filename = "test.json"
     fileprefix = "lf_"
     trainFile = fileprefix + "train.txt"
@@ -126,7 +126,7 @@ def run_latent_factor(sparse_data):
     for trainset, testset in pkf.split(data):
         testsSet = testset
         
-        algo = SVD(n_factors = 100)
+        algo = SVD(n_factors = 5, lr_all = lr, reg_all = reg)
         #algo = KNNBaseline(bsl_options=bsl_options, sim_options=sim_options)
         algo.fit(trainset)
         pre = algo.test(testset)
@@ -181,6 +181,7 @@ def run_latent_factor(sparse_data):
     print 'avg_precisions:', total_precisions / rowNum, 'avg_recalls:', total_recalls / rowNum, 'avg_ffeature', str(total_ffeature / rowNum) , 'avg_hit:', total_hit / rowNum, 'avg_nDCG:', total_nDCG/rowNum
     result_f.write("avg:\t"+str(total_precisions / rowNum)+"\t"+str(total_recalls / rowNum)+"\t" + str(total_ffeature / rowNum) +"\t"+str(total_hit / rowNum) + '\t' + str(total_nDCG/rowNum) + "\n")
     result_f.close()
+    return [(total_precisions / rowNum), (total_recalls / rowNum), (total_ffeature / rowNum), (total_hit / rowNum), (total_nDCG/rowNum) ]
 
 
 def run_knn_baseline(sparse_data):
@@ -201,7 +202,7 @@ def run_knn_baseline(sparse_data):
     ### sim name: cosine    msd       pearson     pearson_baseline
     ### user_based : True ---- similarity will be computed based on users
     ###            : False ---- similarity will be computed based on items.
-    sim_options = {'name': 'cosine',
+    sim_options = {'name': 'pearson',
               'user_based':False}
     predictions = {}
     top_n = {}
@@ -271,10 +272,48 @@ def run_knn_baseline(sparse_data):
     print 'avg_precisions:', total_precisions / rowNum, 'avg_recalls:', total_recalls / rowNum, 'avg_ffeature', str(total_ffeature / rowNum) , 'avg_hit:', total_hit / rowNum, 'avg_nDCG:', total_nDCG/rowNum
     result_f.write("avg:\t"+str(total_precisions / rowNum)+"\t"+str(total_recalls / rowNum)+"\t" + str(total_ffeature / rowNum) +"\t"+str(total_hit / rowNum) + '\t' + str(total_nDCG/rowNum) + "\n")
     result_f.close()
-
+    
 
 
 if __name__ == '__main__':
     sparse_data = sp.sparse_data('test.json')
-    run_latent_factor(sparse_data)
+    precisions = []
+    recalls = []
+    fmeasures = []
+    hits = []
+    nDCG = []
+    print 'lr distribution'
+    reg_list = [0.01, 0.02, 0.04, 0.06, 0.08, 0.1]
+    for reg in reg_list:
+        result = run_latent_factor(sparse_data, reg = reg)
+        precisions.append(result[0])
+        recalls.append(result[1])
+        fmeasures.append(result[2])
+        hits.append(result[3])
+        nDCG.append(result[4])
+    print 'precisions', precisions
+    print 'recalls', recalls
+    print 'fmeasures', fmeasures
+    print 'hits', hits
+    print 'nDCG,', nDCG
+
+    precisions = []
+    recalls = []
+    fmeasures = []
+    hits = []
+    nDCG = []
+    lr_list = [0.002, 0.005, 0.007, 0.01, 0.02]
+    print 'reg distribution'
+    for lr in lr_list:
+        result = run_latent_factor(sparse_data, lr = lr)
+        precisions.append(result[0])
+        recalls.append(result[1])
+        fmeasures.append(result[2])
+        hits.append(result[3])
+        nDCG.append(result[4])
+    print 'precisions', precisions
+    print 'recalls', recalls
+    print 'fmeasures', fmeasures
+    print 'hits', hits
+    print 'nDCG,', nDCG
     #run_knn_baseline(sparse_data)
