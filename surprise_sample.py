@@ -102,7 +102,7 @@ def calculate_NDCG(recommendList, trueSet):
     return nDCG_p
 
 
-def run_latent_factor(sparse_data, lr =.005, reg =.02):
+def run_latent_factor(sparse_data, lr =.0.0002, reg =.02):
     #filename = "test.json"
     fileprefix = "lf_"
     trainFile = fileprefix + "train.txt"
@@ -202,7 +202,7 @@ def run_knn_baseline(sparse_data):
     ### sim name: cosine    msd       pearson     pearson_baseline
     ### user_based : True ---- similarity will be computed based on users
     ###            : False ---- similarity will be computed based on items.
-    sim_options = {'name': 'pearson',
+    sim_options = {'name': 'pearson_baseline',
               'user_based':False}
     predictions = {}
     top_n = {}
@@ -277,43 +277,45 @@ def run_knn_baseline(sparse_data):
 
 if __name__ == '__main__':
     sparse_data = sp.sparse_data('test.json')
-    precisions = []
-    recalls = []
-    fmeasures = []
-    hits = []
-    nDCG = []
-    print 'lr distribution'
-    reg_list = [0.01, 0.02, 0.04, 0.06, 0.08, 0.1]
-    for reg in reg_list:
-        result = run_latent_factor(sparse_data, reg = reg)
-        precisions.append(result[0])
-        recalls.append(result[1])
-        fmeasures.append(result[2])
-        hits.append(result[3])
-        nDCG.append(result[4])
-    print 'precisions', precisions
-    print 'recalls', recalls
-    print 'fmeasures', fmeasures
-    print 'hits', hits
-    print 'nDCG,', nDCG
+    run_latent_factor(sparse_data, lr = 0.0002)
+    run_knn_baseline(sparse_data)
+    '''precisions = []
+                recalls = []
+                fmeasures = []
+                hits = []
+                nDCG = []
+                print 'reg distribution'
+                reg_list = [0.01, 0.02, 0.04, 0.06, 0.08, 0.1]
+                for reg in reg_list:
+                    result = run_latent_factor(sparse_data, reg = reg)
+                    precisions.append(result[0])
+                    recalls.append(result[1])
+                    fmeasures.append(result[2])
+                    hits.append(result[3])
+                    nDCG.append(result[4])
+                print 'precisions', precisions
+                print 'recalls', recalls
+                print 'fmeasures', fmeasures
+                print 'hits', hits
+                print 'nDCG,', nDCG'''
 
-    precisions = []
-    recalls = []
-    fmeasures = []
-    hits = []
-    nDCG = []
-    lr_list = [0.002, 0.005, 0.007, 0.01, 0.02]
-    print 'reg distribution'
-    for lr in lr_list:
-        result = run_latent_factor(sparse_data, lr = lr)
-        precisions.append(result[0])
-        recalls.append(result[1])
-        fmeasures.append(result[2])
-        hits.append(result[3])
-        nDCG.append(result[4])
-    print 'precisions', precisions
-    print 'recalls', recalls
-    print 'fmeasures', fmeasures
-    print 'hits', hits
-    print 'nDCG,', nDCG
+    '''precisions = []
+                recalls = []
+                fmeasures = []
+                hits = []
+                nDCG = []
+                lr_list = [0.00002, 0.00005, 0.00007, 0.0001, 0.0002]
+                print 'lr distribution'
+                for lr in lr_list:
+                    result = run_latent_factor(sparse_data, lr = lr)
+                    precisions.append(result[0])
+                    recalls.append(result[1])
+                    fmeasures.append(result[2])
+                    hits.append(result[3])
+                    nDCG.append(result[4])
+                print 'precisions', precisions
+                print 'recalls', recalls
+                print 'fmeasures', fmeasures
+                print 'hits', hits
+                print 'nDCG,', nDCG'''
     #run_knn_baseline(sparse_data)
