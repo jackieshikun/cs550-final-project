@@ -102,7 +102,7 @@ def calculate_NDCG(recommendList, trueSet):
     return nDCG_p
 
 
-def run_latent_factor(sparse_data, lr =.0.0002, reg =.02):
+def run_latent_factor(sparse_data, lr = 0.0002, reg =.02):
     #filename = "test.json"
     fileprefix = "lf_"
     trainFile = fileprefix + "train.txt"
